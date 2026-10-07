@@ -16,6 +16,13 @@ export interface State {
   loadProgress: number;
   /** 'cad' when a real model was loaded from /models/k1000ule.glb */
   modelSource: 'procedural' | 'cad';
+  /** running inside another site (?embed=1) */
+  embed: boolean;
+  /** embeds: zoom/touch control is enabled after the first click/tap */
+  activated: boolean;
+  /** embeds: timestamp of the last scroll attempt before activation (shows a hint) */
+  wheelHint: number;
+  contextLost: boolean;
   introPhase: 'dark' | 'reveal' | 'done';
   interacted: boolean;
 
@@ -67,6 +74,10 @@ export const useStore = create<State>((set, get) => ({
   ready: false,
   loadProgress: 0,
   modelSource: 'procedural',
+  embed: false,
+  activated: true,
+  wheelHint: 0,
+  contextLost: false,
   introPhase: 'dark',
   interacted: false,
 

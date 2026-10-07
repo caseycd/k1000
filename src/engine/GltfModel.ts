@@ -13,7 +13,7 @@
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { GEAR, SPAN } from '../data/layout';
+import { LOWEST_Y, SPAN } from '../data/layout';
 
 export const MODEL_URL = '/models/k1000ule.glb';
 
@@ -46,6 +46,6 @@ function normalise(scene: THREE.Object3D) {
   const c = box.getCenter(new THREE.Vector3());
   scene.position.x -= c.x;
   scene.position.z -= c.z + 0.25;
-  scene.position.y -= box.min.y - GEAR.footY;
+  scene.position.y -= box.min.y - LOWEST_Y;
   scene.updateMatrixWorld(true);
 }

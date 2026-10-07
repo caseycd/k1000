@@ -2074,3 +2074,109 @@ input[type='range']::-moz-range-thumb {
     display: none;
   }
 }
+
+/* ───────────────────────────────────────────────────────────── embed mode */
+.app.is-embed {
+  --inset: 16px;
+}
+.app.is-embed .k-status-grid,
+.app.is-embed .k-frame,
+.app.is-embed .k-hints-disclaimer,
+.app.is-embed .k-legend {
+  display: none;
+}
+.app.is-embed .k-brand-mark {
+  font-size: 15px;
+}
+.app.is-embed .k-brand-sub {
+  font-size: 8px;
+}
+.app.is-embed .k-settings {
+  right: calc(var(--inset) + 72px);
+}
+.k-embed-actions {
+  position: absolute;
+  top: calc(var(--inset) - 6px);
+  right: var(--inset);
+  display: flex;
+  gap: 2px;
+  z-index: 6;
+}
+.k-embed-actions button,
+.k-embed-actions a {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.k-embed-actions button:hover,
+.k-embed-actions a:hover {
+  color: var(--text-hi);
+  border-color: var(--line);
+}
+.k-embed-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+.k-embed-gate span {
+  padding: 10px 16px;
+  border: 1px solid var(--line-strong);
+  background: rgba(8, 11, 14, 0.72);
+  backdrop-filter: blur(8px);
+  font-size: 9.5px;
+  letter-spacing: 0.3em;
+  color: var(--text-hi);
+  animation: pulse 2.6s ease-in-out infinite;
+}
+.k-embed-hint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 16px;
+  background: rgba(8, 11, 14, 0.82);
+  border: 1px solid var(--line);
+  font-size: 9.5px;
+  letter-spacing: 0.24em;
+  color: var(--text-hi);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease);
+  z-index: 15;
+  white-space: nowrap;
+}
+.k-embed-hint.show {
+  opacity: 1;
+}
+.k-context-lost {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  background: rgba(6, 8, 10, 0.9);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  color: var(--text-hi);
+}
+.k-context-lost small {
+  color: var(--dim);
+  letter-spacing: 0.08em;
+}
+.k-context-lost button {
+  margin-top: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--line-strong);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+}

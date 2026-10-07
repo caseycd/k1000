@@ -18,7 +18,7 @@ import { COMPONENT_MAP, ENVELOPE } from '../data/components';
 
 /** Half-range of the cross-section cut slider per axis, in metres (illustrative scale). */
 export const SECTION_RANGE = { top: 0.15, side: 2.6, front: 1.3 } as const;
-import { CRUISE, FUSELAGE, GEAR, LIFT, LIFT_LAYOUT, TAIL, WING, pad } from '../data/layout';
+import { CRUISE, FUSELAGE, LIFT, LIFT_LAYOUT, LOWEST_Y, TAIL, WING, pad } from '../data/layout';
 import { buildDroneModel, type ComponentNode, type DroneModel } from './DroneModel';
 import { createMaterialLibrary, globalUniforms } from './materials';
 import { LIGHT_PRESETS, clonePreset, lerpPreset, type LightPreset } from './lighting';
@@ -161,6 +161,10 @@ export class DroneEngine {
   private introStarted = false;
   private selectionNode: ComponentNode | null = null;
   private lastRest = 0;
+  private onScreen = true;
+  private resizeObs: ResizeObserver | null = null;
+  private visObs: IntersectionObserver | null = null;
+  private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   constructor(dom: EngineDom) {
     this.dom = dom;
@@ -224,11 +228,16 @@ export class DroneEngine {
   // ─────────────────────────────────────────────────────────── setup
   private configureControls(free: boolean) {
     const c = this.controls;
+    // touch devices in an embed: let the host page scroll until the viewer is tapped
+    const touchGate = getState().embed && !getState().activated && this.isMobile;
+    c.enabled = !touchGate && !getState().cinematic;
+    this.renderer.domElement.style.touchAction = touchGate ? 'pan-y' : 'none';
     const A = CameraControls.ACTION;
     c.mouseButtons.left = A.ROTATE;
     c.mouseButtons.right = A.TRUCK;
     c.mouseButtons.middle = A.DOLLY;
-    c.mouseButtons.wheel = A.DOLLY;
+    const gated = getState().embed && !getState().activated;
+    c.mouseButtons.wheel = gated ? A.NONE : A.DOLLY;
     c.touches.one = A.TOUCH_ROTATE;
     c.touches.two = A.TOUCH_DOLLY_TRUCK;
     c.touches.three = A.TOUCH_TRUCK;
@@ -291,7 +300,7 @@ export class DroneEngine {
     this.rim.position.set(-1.2, 2.2, -4);
     this.scene.add(this.hemi, this.key, this.fill, this.rim);
 
-    const floorY = GEAR.footY - 0.32;
+    const floorY = LOWEST_Y - 0.3;
     this.grid = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), createGridMaterial());
     this.grid.rotation.x = -Math.PI / 2;
     this.grid.position.y = floorY;
@@ -403,8 +412,8 @@ export class DroneEngine {
     // height dimension
     mk(
       [
-        xL, GEAR.footY, zL, xL, top, zL,
-        xL - tick, GEAR.footY, zL, xL + tick, GEAR.footY, zL,
+        xL, LOWEST_Y, zL, xL, top, zL,
+        xL - tick, LOWEST_Y, zL, xL + tick, LOWEST_Y, zL,
         xL - tick, top, zL, xL + tick, top, zL,
       ],
       '#8fb8e0',
@@ -416,7 +425,7 @@ export class DroneEngine {
     mk([0, fy, 0, 0, fy + 0.45, 0], '#7cc48a', false, 0.9);
     mk([0, fy, 0, 0, fy, 0.45], '#5d9ae0', false, 0.9);
     // bounding brackets
-    const y0 = GEAR.footY - 0.01;
+    const y0 = LOWEST_Y - 0.01;
     const y1 = top;
     const sB = 0.18;
     const corners: number[] = [];
@@ -433,7 +442,7 @@ export class DroneEngine {
     this.dimAnchors = [
       { p: new THREE.Vector3(0, fy, zL - 0.12), text: `SPAN ${ENVELOPE.span} mm` },
       { p: new THREE.Vector3(xL + 0.22, fy, (tailZ + noseZ) / 2), text: `LENGTH ${ENVELOPE.length} mm` },
-      { p: new THREE.Vector3(xL + 0.15, (GEAR.footY + top) / 2, zL), text: `H ${ENVELOPE.height} mm` },
+      { p: new THREE.Vector3(xL + 0.15, (LOWEST_Y + top) / 2, zL), text: `H ${ENVELOPE.height} mm` },
       { p: new THREE.Vector3(0.52, fy, 0), text: '+X' },
       { p: new THREE.Vector3(0, fy + 0.52, 0), text: '+Y' },
       { p: new THREE.Vector3(0, fy, 0.55), text: '+Z  FWD' },
@@ -572,6 +581,7 @@ export class DroneEngine {
   // ─────────────────────────────────────────────────────────── state
   private onState(s: State, p: State) {
     if (s.lighting !== p.lighting) this.needsRender = true;
+    if (s.activated !== p.activated) this.configureControls(s.freeCam);
     if (s.freeCam !== p.freeCam) {
       this.configureControls(s.freeCam);
       if (!s.freeCam) this.setCameraView('reset');
@@ -659,6 +669,29 @@ export class DroneEngine {
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('wheel', this.onUserInteract, { passive: true });
     window.addEventListener('resize', this.resize);
+    // size from the container (works when embedded directly, not only full-window)
+    if ('ResizeObserver' in window) {
+      this.resizeObs = new ResizeObserver(() => this.resize());
+      this.resizeObs.observe(this.dom.host);
+    }
+    // stop rendering while scrolled out of view (embeds on long pages)
+    if ('IntersectionObserver' in window) {
+      this.visObs = new IntersectionObserver((entries) => {
+        this.onScreen = entries.some((e) => e.isIntersecting);
+        if (this.onScreen) {
+          this.timer.update();
+          this.needsRender = true;
+        }
+      });
+      this.visObs.observe(this.dom.host);
+    }
+    el.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      useStore.setState({ contextLost: true });
+    });
+    el.addEventListener('webglcontextrestored', () => window.location.reload());
+    el.addEventListener('pointerdown', this.activate, { capture: true });
+    el.addEventListener('wheel', this.onGatedWheel, { passive: true });
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     this.controls.addEventListener('controlstart', this.onUserInteract);
@@ -670,6 +703,16 @@ export class DroneEngine {
       }
     });
   }
+
+  /** First click/tap inside an embed enables zoom (and touch control). */
+  private activate = () => {
+    if (!getState().activated) useStore.setState({ activated: true });
+  };
+
+  private onGatedWheel = () => {
+    const s = getState();
+    if (s.embed && !s.activated) useStore.setState({ wheelHint: Date.now() });
+  };
 
   private onUserInteract = () => {
     const s = getState();
@@ -925,7 +968,7 @@ export class DroneEngine {
   private loop = () => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
-    if (document.hidden) return;
+    if (document.hidden || !this.onScreen) return;
     this.timer.update();
     const dt = Math.min(this.timer.getDelta(), 0.1);
     this.time += dt;
@@ -998,7 +1041,7 @@ export class DroneEngine {
     if (this.sectionActive) active = this.updateSection(s, k) || active;
 
     // ── bob / idle float
-    const bobT = s.autoRotate || s.presentation || s.cinematic ? 1 : 0;
+    const bobT = !this.reducedMotion && (s.autoRotate || s.presentation || s.cinematic) ? 1 : 0;
     this.bobAmt = approach(this.bobAmt, bobT, 1 - Math.exp(-dt * 1.5));
     if (this.bobAmt > 0.001) {
       this.model.root.position.y = Math.sin(this.time * 0.9) * 0.02 * this.bobAmt;
@@ -1353,6 +1396,8 @@ export class DroneEngine {
 
   dispose() {
     this.disposed = true;
+    this.resizeObs?.disconnect();
+    this.visObs?.disconnect();
     cancelAnimationFrame(this.raf);
     this.unsub();
     window.removeEventListener('resize', this.resize);

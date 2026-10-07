@@ -4,7 +4,7 @@ An explorable digital-twin website for the **Kraus Hamdani Aerospace K1000ULE**,
 
 Built with React, TypeScript, Vite and Three.js, and deployed on Cloudflare Workers (static assets + a tiny `/api/status` Worker).
 
-> **About accuracy.** No official CAD is bundled. The 3D model is built in code. Its proportions were traced from the manufacturer's public product imagery: the solar wing, T-tail, nose tractor prop, and two booms carrying four lift rotors. The absolute scale (a 5 m wingspan is assumed) and the internal layout are illustrative. In the inspector, specs tagged **PUBLISHED** come from the public K1000ULE product page. Every other value is a labelled placeholder. To show the real geometry, drop in a model file (see below).
+> **About accuracy.** No official CAD is bundled. The 3D model is built in code. Its proportions were traced from CAD views of the K1000ULE (top, 3/4 and exploded views), cross-checked against the manufacturer's public renders. That covers the three-piece solar wing, slim keel fuselage with removable canopy and antenna masts, spindle booms carrying four lift rotors, nose tractor prop, and T-tail. The absolute scale (a 5 m wingspan is assumed) and the internal layout are illustrative. In the inspector, specs tagged **PUBLISHED** come from the public K1000ULE product page. Every other value is a labelled placeholder. To show the real geometry, drop in a model file (see below).
 
 ## Run locally
 
@@ -34,6 +34,15 @@ The site deploys as a **Cloudflare Worker with Static Assets**. Everything is se
 The Worker name in the dashboard must match `name = "k1000"` in `wrangler.toml`. Change one of them if they differ.
 
 **CLI:** `npx wrangler login` then `npm run deploy`.
+
+## Embed it on another website
+
+```html
+<div data-k1000></div>
+<script src="https://YOUR-VIEWER-HOST/embed.js" async></script>
+```
+
+The embedded viewer doesn't take over the host page's scrolling, loads lazily, pauses while off-screen, and can be controlled from the host page (`viewer.select('battery')`, `viewer.explode(1)`, …). See **[EMBED.md](EMBED.md)** for options, the API, events and allowed-domain settings, and `/embed-demo.html` for a live example.
 
 ## Using the real K1000ULE model
 

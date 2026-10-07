@@ -5,6 +5,8 @@ import { writeUrlState } from '../utils/url';
 /** Mirror shareable state into the URL (debounced, replaceState only). */
 export function useUrlSync() {
   useEffect(() => {
+    // embedded viewers never rewrite their URL (the host page owns navigation)
+    if (useStore.getState().embed) return;
     let t = 0;
     const unsub = useStore.subscribe((s, p) => {
       if (

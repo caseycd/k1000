@@ -34,6 +34,14 @@ export function readUrlState(search = window.location.search): Partial<State> {
   const cam = q.get('cam');
   if (cam) out.camParam = cam;
   if (Object.keys(out).length > 0) out.autoRotate = false;
+  // presentation options that should not stop the idle rotation
+  if (q.get('embed') === '1') {
+    out.embed = true;
+    out.activated = false;
+  }
+  if (q.get('autorotate') === '0') out.autoRotate = false;
+  if (q.get('autorotate') === '1') out.autoRotate = true;
+  if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) out.autoRotate = false;
   if (out.camParam || out.selected) out.interacted = true;
   return out;
 }

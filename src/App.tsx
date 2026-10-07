@@ -10,6 +10,7 @@ import { MeasurementTool } from './components/MeasurementTool';
 import { FrameMarks, TechnicalOverlay } from './components/TechnicalOverlay';
 import { Hints, IntroOverlay } from './components/IntroOverlay';
 import { EngineerPanel, ExitChip, Letterbox, Toast } from './components/Misc';
+import { ContextLost, EmbedChrome } from './components/EmbedChrome';
 import { useIdle } from './hooks/useIdle';
 import { useKeyboard } from './hooks/useKeyboard';
 import { useUrlSync } from './hooks/useUrlSync';
@@ -27,6 +28,7 @@ export default function App() {
   const selected = useStore((s) => s.selected);
   const explode = useStore((s) => s.explode);
   const section = useStore((s) => s.section);
+  const embed = useStore((s) => s.embed);
 
   const cls = [
     'app',
@@ -38,6 +40,7 @@ export default function App() {
     `mode-${mode}`,
     selected && 'has-selection',
     (explode > 0.001 || section) && 'has-dock',
+    embed && 'is-embed',
   ]
     .filter(Boolean)
     .join(' ');
@@ -65,6 +68,8 @@ export default function App() {
       <Letterbox />
       <ExitChip />
       <Toast />
+      <EmbedChrome />
+      <ContextLost />
       <IntroOverlay />
     </div>
   );
