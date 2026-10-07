@@ -18,7 +18,7 @@ export const WING = {
   halfSpan: SPAN / 2,
   rootChord: 0.293,
   /** spanwise position where the rounded tip begins */
-  tipStart: 2.3,
+  tipStart: 1.9,
   /** trailing edge z (straight) */
   teZ: -0.05,
   /** chord-line height at the root (wing sits on top of the fuselage pod) */
@@ -43,7 +43,7 @@ export const BOOM = {
   /** maximum radius, at the pylon */
   radius: 0.031,
   /** radius of the motor nacelles at the rotor stations */
-  nacelle: 0.022,
+  nacelle: 0.025,
   rotorFrontZ: 0.733,
   rotorRearZ: -0.59,
 } as const;
@@ -51,7 +51,7 @@ export const BOOM = {
 export const LIFT = {
   motorRadius: 0.03,
   motorHeight: 0.036,
-  propRadius: 0.19,
+  propRadius: 0.15,
 } as const;
 
 export const CRUISE = {
@@ -93,7 +93,7 @@ export function wingStation(xAbs: number) {
     c = Math.max(0.035, c0 * Math.sqrt(Math.max(0, 1 - t * t)));
   }
   // straight trailing edge; the leading edge rounds back into the tip
-  const te = WING.teZ + 0.12 * (c0 - c);
+  const te = WING.teZ + 0.1 * (c0 - c);
   return { chord: c, te, le: te + c };
 }
 
