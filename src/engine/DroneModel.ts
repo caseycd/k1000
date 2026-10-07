@@ -155,24 +155,34 @@ function fastenerGeometry() {
 // ───────────────────────────────────────────────────────── component builders
 
 // ───────────────────────────────────────────────────────── fuselage surface
-/** [z, halfWidth, top, bottom] stations traced from the reference imagery. */
-const FS: [number, number, number, number][] = [
-  [0.84, 0.066, 0.064, 0.066],
-  [0.7, 0.08, 0.08, 0.085],
-  [0.5, 0.088, 0.088, 0.095],
-  [0.3, 0.088, 0.092, 0.093],
-  [0.1, 0.084, 0.092, 0.085],
-  [-0.05, 0.072, 0.088, 0.07],
-  [-0.2, 0.052, 0.07, 0.05],
-  [-0.4, 0.034, 0.045, 0.033],
-  [-0.62, 0.025, 0.026, 0.025],
+/**
+ * [z, halfWidth, centreY, halfHeightTop, halfHeightBottom] stations traced from the
+ * reference top view, 3/4 render and flight photo: a slender conical nose, a deep keel
+ * under the wing, and an aft section that sweeps up into a tail boom leaving from the
+ * top of the fuselage at wing level, with a wide triangular dorsal fairing behind the wing.
+ */
+const FS: [number, number, number, number, number][] = [
+  [0.925, 0.025, -0.016, 0.025, 0.027],
+  [0.8, 0.04, -0.02, 0.05, 0.055],
+  [0.6, 0.055, -0.02, 0.075, 0.09],
+  [0.4, 0.066, -0.02, 0.098, 0.11],
+  [0.25, 0.072, -0.02, 0.112, 0.12],
+  [0.1, 0.08, -0.015, 0.108, 0.118],
+  [-0.05, 0.094, 0.0, 0.095, 0.105],
+  [-0.15, 0.076, 0.018, 0.077, 0.08],
+  [-0.25, 0.054, 0.035, 0.058, 0.055],
+  [-0.35, 0.036, 0.05, 0.04, 0.036],
+  [-0.45, 0.026, 0.06, 0.028, 0.026],
+  [-0.55, 0.021, 0.066, 0.021, 0.021],
+  [-0.62, 0.019, 0.068, 0.019, 0.019],
 ];
 const FUSE_Z0 = FS[0][0];
 const FUSE_Z1 = FS[FS.length - 1][0];
 const cr = (p0: number, p1: number, p2: number, p3: number, t: number) =>
   0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
 
-export function fuselageProfile(z: number): [number, number, number] {
+/** [halfWidth, centreY, halfHeightTop, halfHeightBottom] at station z. */
+export function fuselageProfile(z: number): [number, number, number, number] {
   const zc = Math.min(FUSE_Z0, Math.max(FUSE_Z1, z));
   let i = 0;
   while (i < FS.length - 2 && zc < FS[i + 1][0]) i++;
@@ -181,8 +191,19 @@ export function fuselageProfile(z: number): [number, number, number] {
   const t = (a[0] - zc) / (a[0] - b[0]);
   const p0 = FS[Math.max(0, i - 1)];
   const p3 = FS[Math.min(FS.length - 1, i + 2)];
-  return [1, 2, 3].map((k) => cr(p0[k], a[k], b[k], p3[k], t)) as [number, number, number];
+  return [1, 2, 3, 4].map((k) => cr(p0[k], a[k], b[k], p3[k], t)) as [number, number, number, number];
 }
+export const fuselageTop = (z: number) => {
+  const [, yc, ht] = fuselageProfile(z);
+  return yc + ht;
+};
+export const fuselageBottom = (z: number) => {
+  const [, yc, , hb] = fuselageProfile(z);
+  return yc - hb;
+};
+
+/** cruise-motor axis height (centre of the nose section) */
+export const NOSE_Y = -0.016;
 
 const SE = 2.5;
 const sp = (c: number, n: number) => Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
@@ -190,10 +211,10 @@ const zToU = (z: number) => (FUSE_Z0 - z) / (FUSE_Z0 - FUSE_Z1);
 
 export const fuselageSurface: SurfaceFn = (u, v, out) => {
   const z = FUSE_Z0 - Math.min(1, Math.max(0, u)) * (FUSE_Z0 - FUSE_Z1);
-  const [w, top, bot] = fuselageProfile(z);
+  const [w, yc, ht, hb] = fuselageProfile(z);
   const c = Math.cos(v);
   const s = Math.sin(v);
-  out.set(w * sp(c, SE), (s >= 0 ? top : bot) * sp(s, SE), z);
+  out.set(w * sp(c, SE), yc + (s >= 0 ? ht : hb) * sp(s, SE), z);
   return out;
 };
 
@@ -209,7 +230,7 @@ function onFuselage(g: THREE.BufferGeometry, z: number, v: number, lift: number)
   const du = fuselageSurface(u + e, v, new THREE.Vector3()).sub(fuselageSurface(u - e, v, new THREE.Vector3())).normalize();
   const dv = fuselageSurface(u, v + e, new THREE.Vector3()).sub(fuselageSurface(u, v - e, new THREE.Vector3())).normalize();
   const n = new THREE.Vector3().crossVectors(du, dv).normalize();
-  if (n.dot(new THREE.Vector3(p.x, p.y, 0)) < 0) n.negate();
+  if (n.dot(new THREE.Vector3(p.x, p.y - fuselageProfile(p.z)[1], 0)) < 0) n.negate();
   const x = du.clone().negate(); // forward
   const zA = new THREE.Vector3().crossVectors(x, n).normalize();
   x.crossVectors(n, zA).normalize();
@@ -319,29 +340,24 @@ function logoTexture() {
 }
 
 BUILDERS['nose-cone'] = (b) => {
+  // slender nose fairing ahead of the conical pod, around the cruise motor axis
   b.add(
     'shell',
     latheZ(
       [
-        [0, 0.836],
-        [0.0655, 0.836],
-        [0.064, 0.865],
-        [0.059, 0.893],
-        [0.051, 0.918],
-        [0.045, 0.934],
-        [0, 0.934],
+        [0, 0.918],
+        [0.0262, 0.918],
+        [0.0252, 0.93],
+        [0.0228, 0.941],
+        [0.0205, 0.948],
+        [0, 0.948],
       ],
-      48,
+      40,
+      0,
+      NOSE_Y,
     ),
   );
-  // cooling slots
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2 + 0.3;
-    const g = box(0.003, 0.0016, 0.022);
-    g.translate(0, 0.0, 0);
-    xf(g, [Math.cos(a) * 0.0612, Math.sin(a) * 0.0612, 0.872], [0, 0, a - Math.PI / 2]);
-    b.add('seam', g);
-  }
+  b.add('seam', torus(0.0258, 0.0006, [0, NOSE_Y, 0.9185], [0, 0, 0], 6, 40));
 };
 
 for (const side of [1, -1] as const) {
@@ -397,16 +413,17 @@ BUILDERS['wing-spar'] = (b) => {
 };
 
 BUILDERS['tail-boom'] = (b) => {
-  const p0 = new THREE.Vector3(0, 0.0, -0.58);
-  const p1 = new THREE.Vector3(0, 0.012, FUSELAGE.tailEndZ + 0.005);
+  // leaves the top of the aft fuselage at wing level and runs straight to the fin
+  const p0 = new THREE.Vector3(0, 0.068, -0.585);
+  const p1 = new THREE.Vector3(0, 0.08, FUSELAGE.tailEndZ + 0.005);
   const L = p0.distanceTo(p1);
   const g = lathe(
     [
       [0, 0],
-      [0.026, 0],
-      [0.017, L],
-      [0.011, L + 0.008],
-      [0, L + 0.011],
+      [0.0195, 0],
+      [0.0145, L],
+      [0.0095, L + 0.007],
+      [0, L + 0.01],
     ],
     32,
   );
@@ -415,7 +432,7 @@ BUILDERS['tail-boom'] = (b) => {
 };
 
 const finStations = (): LoftStation[] => [
-  { s: 0.0, t: 0, le: TAIL.finRootLE, chord: TAIL.finRootLE - TAIL.finRootTE, tc: 0.1 },
+  { s: TAIL.finBaseY - 0.012, t: 0, le: TAIL.finRootLE, chord: TAIL.finRootLE - TAIL.finRootTE, tc: 0.1 },
   { s: TAIL.finTipY, t: 0, le: TAIL.finTipLE, chord: TAIL.finTipLE - TAIL.finTipTE, tc: 0.09 },
 ];
 
@@ -674,9 +691,8 @@ for (const a of LIFT_LAYOUT) {
 }
 
 BUILDERS['cruise-motor'] = (b) => {
-  b.add('motorBell', cyl(0.041, 0.041, 0.022, 40, [0, 0, 0.946], [Math.PI / 2, 0, 0]));
-  b.add('aluminum', torus(0.0412, 0.0012, [0, 0, 0.955], [0, 0, 0], 8, 40));
-  b.add('anodized', cyl(0.043, 0.043, 0.006, 40, [0, 0, 0.937], [Math.PI / 2, 0, 0]));
+  b.add('motorBell', cyl(0.0195, 0.0195, 0.011, 36, [0, NOSE_Y, 0.9535], [Math.PI / 2, 0, 0]));
+  b.add('aluminum', torus(0.0196, 0.0008, [0, NOSE_Y, 0.958], [0, 0, 0], 6, 36));
 };
 
 BUILDERS['cruise-prop'] = (b) => {
@@ -685,30 +701,32 @@ BUILDERS['cruise-prop'] = (b) => {
     'blackMatte',
     latheZ(
       [
-        [0, 0.957],
-        [0.043, 0.957],
-        [0.041, 0.975],
-        [0.034, 0.996],
-        [0.021, 1.012],
-        [0, 1.02],
+        [0, 0.959],
+        [0.0205, 0.959],
+        [0.0195, 0.969],
+        [0.0158, 0.98],
+        [0.009, 0.989],
+        [0, 0.992],
       ],
-      40,
+      36,
+      0,
+      NOSE_Y,
     ),
   );
-  const blade = bladeGeo(1, 0.034, CRUISE.propRadius);
+  const blade = bladeGeo(1, 0.02, CRUISE.propRadius);
   for (const yaw of [0, Math.PI]) {
     const g = blade.clone();
     g.rotateY(yaw);
     g.rotateX(Math.PI / 2); // disc in XY, thrust along +Z
-    g.translate(0, 0, z);
+    g.translate(0, NOSE_Y, z);
     b.addSpin('carbon', g);
   }
 };
 
 BUILDERS['cruise-esc'] = (b) => {
-  b.add('anodized', rbox(0.05, 0.03, 0.05, 0.004, [0, 0, 0.8]));
+  b.add('anodized', rbox(0.04, 0.026, 0.05, 0.004, [0, -0.022, 0.8]));
   const fins: THREE.BufferGeometry[] = [];
-  for (let k = 0; k < 6; k++) fins.push(box(0.0014, 0.008, 0.044, [-0.018 + k * 0.0072, 0.019, 0.8]));
+  for (let k = 0; k < 5; k++) fins.push(box(0.0014, 0.007, 0.044, [-0.014 + k * 0.007, -0.0055, 0.8]));
   b.add('anodized', merge(fins));
 };
 
@@ -766,7 +784,7 @@ BUILDERS['wiring-harness'] = (b) => {
   // battery → PDB
   pair([[-0.01, 0.0, 0.12], [-0.01, -0.02, 0.105], [-0.006, -0.031, 0.09]], 0.0028);
   // PDB → cruise ESC
-  pair([[0.03, -0.038, 0.11], [0.058, -0.05, 0.3], [0.052, -0.03, 0.56], [0.02, -0.008, 0.776]]);
+  pair([[0.03, -0.038, 0.11], [0.05, -0.06, 0.3], [0.03, -0.045, 0.56], [0.012, -0.03, 0.776]]);
   // PDB → wing root → spar → booms → lift ESCs
   for (const side of [1, -1] as const) {
     const x = side * BOOM.x;
@@ -788,9 +806,9 @@ BUILDERS['wiring-harness'] = (b) => {
   b.add('wireYellow', tube([[0.012, 0.046, -0.095], [0.012, 0.085, -0.02], [0.012, wingY(0) + 0.004, 0.1], [0.03, wingY(0.03) + 0.01, 0.165]], 0.0016, 24, 6));
   // signal: FC → SATCOM, datalink, mission computer
   b.add('wireSignal', tube([[0, 0.042, 0.0], [0, 0.062, -0.08], [0, 0.074, -0.128]], 0.0014, 20, 6));
-  b.add('wireSignal', tube([[0.015, 0.03, -0.01], [0.02, 0.02, -0.15], [0.008, 0.01, -0.28]], 0.0014, 24, 6));
+  b.add('wireSignal', tube([[0.015, 0.03, -0.01], [0.02, 0.04, -0.15], [0.008, 0.048, -0.28]], 0.0014, 24, 6));
   b.add('wireSignal', tube([[0, 0.042, 0.065], [0, 0.064, 0.3], [0, 0.046, 0.555]], 0.0014, 24, 6));
-  b.add('wireBlack', tube([[0, -0.016, -0.3], [0, -0.03, -0.29], [0, -0.04, -0.282]], 0.0015, 10, 6));
+  b.add('wireBlack', tube([[0, 0.029, -0.302], [0, 0.012, -0.292], [0, fuselageBottom(-0.282) + 0.004, -0.282]], 0.0015, 10, 6));
 };
 
 // ───────────────────────────────────────────────────────── avionics
@@ -823,7 +841,7 @@ BUILDERS['companion-computer'] = (b) => {
 
 BUILDERS['satcom'] = (b) => {
   const z = -0.14;
-  const top = fuselageProfile(z)[1];
+  const top = fuselageTop(z);
   const g = sphere(1, [0, 0, 0], 32, 20);
   g.scale(0.03, 0.022, 0.07);
   g.translate(0, top - 0.004, z);
@@ -832,21 +850,21 @@ BUILDERS['satcom'] = (b) => {
 };
 
 BUILDERS['datalink'] = (b) => {
-  b.add('anodized', rbox(0.045, 0.032, 0.08, 0.004, [0, 0.0, -0.32]));
-  b.add('gold', cyl(0.0032, 0.0032, 0.008, 12, [0, -0.018, -0.3], [0, 0, 0]));
-  b.add('ledBlue', box(0.003, 0.002, 0.001, [0.015, 0.008, -0.2797]));
+  b.add('anodized', rbox(0.042, 0.03, 0.08, 0.004, [0, 0.046, -0.32]));
+  b.add('gold', cyl(0.0032, 0.0032, 0.008, 12, [0, 0.027, -0.3], [0, 0, 0]));
+  b.add('ledBlue', box(0.003, 0.002, 0.001, [0.014, 0.052, -0.2797]));
 };
 
 BUILDERS['gnss'] = (b) => {
   const z = -0.42;
-  const top = fuselageProfile(z)[1];
+  const top = fuselageTop(z);
   b.add('plasticLight', lathe([[0, 0], [0.019, 0], [0.019, 0.006], [0.014, 0.011], [0, 0.012]], 32, [0, top - 0.003, z]));
   b.add('blackMatte', cyl(0.0195, 0.0195, 0.002, 32, [0, top - 0.002, z]));
 };
 
 for (const [id, z, yTop] of [
-  ['antenna-01', -0.28, -fuselageProfile(-0.28)[2]],
-  ['antenna-02', -0.95, -0.006],
+  ['antenna-01', -0.28, fuselageBottom(-0.28)],
+  ['antenna-02', -0.95, 0.062],
 ] as const) {
   BUILDERS[id] = (b) => {
     const s = new THREE.Shape();
@@ -874,7 +892,7 @@ BUILDERS['pitot'] = (b) => {
 };
 
 BUILDERS['lidar-down'] = (b) => {
-  const bot = -fuselageProfile(-0.05)[2];
+  const bot = fuselageBottom(-0.05);
   b.add('blackMatte', rbox(0.022, 0.012, 0.03, 0.003, [0, bot + 0.002, -0.05]));
   b.add('lens', cyl(0.005, 0.005, 0.002, 20, [0, bot - 0.0042, -0.043]));
   b.add('glass', cyl(0.0055, 0.0055, 0.002, 20, [0, bot - 0.0042, -0.057]));
@@ -888,7 +906,7 @@ BUILDERS['nav-lights'] = (b) => {
 // ───────────────────────────────────────────────────────── camera
 BUILDERS['gimbal'] = (b) => {
   const z = 0.62;
-  const bot = -fuselageProfile(z)[2];
+  const bot = fuselageBottom(z);
   b.add('anodized', cyl(0.034, 0.034, 0.01, 40, [0, bot + 0.002, z]));
   b.add('motorBell', cyl(0.028, 0.03, 0.016, 40, [0, bot - 0.011, z]));
   b.add('aluminum', torus(0.0285, 0.0012, [0, bot - 0.004, z], [Math.PI / 2, 0, 0], 6, 40));
@@ -901,7 +919,7 @@ BUILDERS['gimbal'] = (b) => {
 
 BUILDERS['eo-ir'] = (b) => {
   const z = 0.62;
-  const cy = -fuselageProfile(z)[2] - 0.055;
+  const cy = fuselageBottom(z) - 0.055;
   b.add('plasticLight', sphere(0.041, [0, cy, z], 40, 28));
   // sensor windows facing forward
   const win = (r: number, x: number, y: number, key: MatKey) => {
@@ -953,10 +971,10 @@ BUILDERS['belly-skid'] = (b) => {
   for (const s of [1, -1]) {
     const pts: V3[] = [];
     for (let k = 0; k <= 8; k++) {
-      const z = -0.2 + (k / 8) * 0.34;
-      const [w, , bot] = fuselageProfile(z);
+      const z = -0.08 + (k / 8) * 0.42;
+      const [w, yc, , hb] = fuselageProfile(z);
       const x = s * 0.035;
-      const y = -bot * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(x) / w, SE)), 1 / SE) - 0.004;
+      const y = yc - hb * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(x) / w, SE)), 1 / SE) - 0.004;
       pts.push([x, y, z]);
     }
     b.add('rubber', tube(pts, 0.004, 24, 8));

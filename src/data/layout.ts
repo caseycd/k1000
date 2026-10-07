@@ -52,7 +52,7 @@ export const LIFT = {
 
 export const CRUISE = {
   propRadius: (120 / 2) * k,
-  z: 0.985,
+  z: 0.973,
 } as const;
 
 export const TAIL = {
@@ -60,16 +60,16 @@ export const TAIL = {
   finRootTE: -1.47,
   finTipLE: -1.3,
   finTipTE: -1.48,
-  finBaseY: 0.03,
-  finTipY: 0.45,
+  finBaseY: 0.09,
+  finTipY: 0.5,
   stabHalfSpan: (294 / 2) * k,
   stabLE: 0.95 - 675 * k + 50 * k,
   stabTE: 0.95 - 675 * k,
 } as const;
 
 export const GEAR = {
-  footY: -0.205,
-  bellySkidY: -0.11,
+  footY: -0.255,
+  bellySkidY: -0.14,
 } as const;
 
 /** dihedral rise of the wing chord line at spanwise station |x| */
