@@ -15,7 +15,10 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 
 import { getState, useStore, type CameraView, type State } from '../store';
 import { COMPONENT_MAP, ENVELOPE } from '../data/components';
-import { ARM, GEAR, PROP } from '../data/layout';
+
+/** Half-range of the cross-section cut slider per axis, in metres (illustrative scale). */
+export const SECTION_RANGE = { top: 0.15, side: 2.6, front: 1.3 } as const;
+import { CRUISE, FUSELAGE, GEAR, LIFT, LIFT_LAYOUT, TAIL, WING, pad } from '../data/layout';
 import { buildDroneModel, type ComponentNode, type DroneModel } from './DroneModel';
 import { createMaterialLibrary, globalUniforms } from './materials';
 import { LIGHT_PRESETS, clonePreset, lerpPreset, type LightPreset } from './lighting';
@@ -31,8 +34,8 @@ THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const DEFAULT_AZIMUTH = -0.62;
 const DEFAULT_POLAR = 1.12;
-const TARGET = new THREE.Vector3(0, -0.085, 0);
-const FIT_RADIUS = 0.6;
+const TARGET = new THREE.Vector3(0, 0.07, -0.18);
+const FIT_RADIUS = 1.75;
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
@@ -50,6 +53,8 @@ interface MeasureLine {
 }
 
 export interface EngineDom {
+  /** optional real model (glTF scene) that replaces the procedural geometry */
+  external?: THREE.Object3D | null;
   host: HTMLElement;
   hud: SVGSVGElement;
   gizmo: SVGSVGElement;
@@ -178,7 +183,7 @@ export class DroneEngine {
     this.renderer.domElement.className = 'k-canvas';
     dom.host.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(30, 1, 0.01, 60);
+    this.camera = new THREE.PerspectiveCamera(30, 1, 0.01, 200);
     this.controls = new CameraControls(this.camera, this.renderer.domElement);
     this.configureControls(false);
 
@@ -238,7 +243,7 @@ export class DroneEngine {
     c.minPolarAngle = 0;
     c.maxPolarAngle = Math.PI;
     c.minDistance = free ? 0.005 : 0.035;
-    c.maxDistance = free ? 25 : 8;
+    c.maxDistance = free ? 60 : 22;
     c.infinityDolly = free;
   }
 
@@ -286,15 +291,15 @@ export class DroneEngine {
     this.rim.position.set(-1.2, 2.2, -4);
     this.scene.add(this.hemi, this.key, this.fill, this.rim);
 
-    const floorY = GEAR.skidY - 0.22;
-    this.grid = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), createGridMaterial());
+    const floorY = GEAR.footY - 0.32;
+    this.grid = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), createGridMaterial());
     this.grid.rotation.x = -Math.PI / 2;
     this.grid.position.y = floorY;
     this.grid.renderOrder = -2;
     this.scene.add(this.grid);
 
     this.shadow = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.3, 2.0),
+      new THREE.PlaneGeometry(6.2, 3.6),
       new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.7, toneMapped: false }),
     );
     this.shadow.rotation.x = -Math.PI / 2;
@@ -305,7 +310,7 @@ export class DroneEngine {
 
   private setupModel() {
     const lib = createMaterialLibrary();
-    this.model = buildDroneModel(lib);
+    this.model = buildDroneModel(lib, this.dom.external);
     this.scene.add(this.model.root);
     for (const o of this.model.pickables) {
       const m = o as THREE.Mesh;
@@ -314,22 +319,23 @@ export class DroneEngine {
       }
     }
     // rotor discs (overlay) parented to each propeller so they follow the explode
-    for (let i = 1; i <= 4; i++) {
-      const node = this.model.nodes.get(`prop-0${i}`)!;
+    const disc = (radius: number, vertical: boolean) => {
       const pts: THREE.Vector3[] = [];
       for (let k = 0; k <= 96; k++) {
         const a = (k / 96) * Math.PI * 2;
-        pts.push(new THREE.Vector3(Math.cos(a) * PROP.radius, 0, Math.sin(a) * PROP.radius));
+        pts.push(vertical ? new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 0) : new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
       }
       const g = new THREE.BufferGeometry().setFromPoints(pts);
-      const m = new THREE.LineDashedMaterial({ color: '#6fb7ff', dashSize: 0.025, gapSize: 0.018, transparent: true, opacity: 0, depthWrite: false });
+      const m = new THREE.LineDashedMaterial({ color: '#6fb7ff', dashSize: 0.03, gapSize: 0.02, transparent: true, opacity: 0, depthWrite: false });
       const line = new THREE.Line(g, m);
       line.computeLineDistances();
       line.visible = false;
-      node.group.add(line);
       this.rotorDiscs.push(line);
       this.overlayMats.push(m);
-    }
+      return line;
+    };
+    for (const a of LIFT_LAYOUT) this.model.nodes.get(`lift-prop-${pad(a.index)}`)?.group.add(disc(LIFT.propRadius, false));
+    this.model.nodes.get('cruise-prop')?.group.add(disc(CRUISE.propRadius, true));
     // explode guide lines
     const n = this.model.nodes.size;
     const gg = new THREE.BufferGeometry();
@@ -361,43 +367,44 @@ export class DroneEngine {
       return line;
     };
     const fy = this.grid.position.y + 0.003;
-    // centerlines through the datum
-    mk([-1.15, ARM.y, 0, 1.15, ARM.y, 0, 0, ARM.y, -1.15, 0, ARM.y, 1.15, 0, fy, 0, 0, 0.42, 0], '#6f9fcf', true, 0.55);
-    // envelope dimensions on the floor
     const half = ENVELOPE.span / 2000;
-    const zL = -1.02;
-    const xL = 1.08;
-    const tick = 0.035;
+    const noseZ = FUSELAGE.noseZ + 0.07;
+    const tailZ = FUSELAGE.tailEndZ;
+    const zL = tailZ - 0.35;
+    const xL = half + 0.3;
+    const tick = 0.06;
+    const top = TAIL.finTipY + 0.03;
+    // centerlines through the datum
+    mk([-half - 0.4, WING.y, 0, half + 0.4, WING.y, 0, 0, WING.y, tailZ - 0.4, 0, WING.y, noseZ + 0.4, 0, fy, 0, 0, top + 0.2, 0], '#6f9fcf', true, 0.55);
+    // span dimension (floor, aft of the tail)
     mk(
       [
         -half, fy, zL, half, fy, zL,
         -half, fy, zL - tick, -half, fy, zL + tick,
         half, fy, zL - tick, half, fy, zL + tick,
-        -half, fy, zL + tick, -half, fy, -0.3,
-        half, fy, zL + tick, half, fy, -0.3,
+        -half, fy, zL + tick, -half, fy, WING.teZ - 0.1,
+        half, fy, zL + tick, half, fy, WING.teZ - 0.1,
       ],
       '#8fb8e0',
       false,
       0.55,
     );
-    const wb = ENVELOPE.wheelbase / 2000;
-    const mx = wb * Math.SQRT1_2;
+    // length dimension (floor, outboard of the port tip)
     mk(
       [
-        xL, fy, -mx, xL, fy, mx,
-        xL - tick, fy, -mx, xL + tick, fy, -mx,
-        xL - tick, fy, mx, xL + tick, fy, mx,
+        xL, fy, tailZ, xL, fy, noseZ,
+        xL - tick, fy, tailZ, xL + tick, fy, tailZ,
+        xL - tick, fy, noseZ, xL + tick, fy, noseZ,
       ],
       '#8fb8e0',
       false,
       0.55,
     );
     // height dimension
-    const top = PROP.y;
     mk(
       [
-        xL, GEAR.skidY, zL, xL, top, zL,
-        xL - tick, GEAR.skidY, zL, xL + tick, GEAR.skidY, zL,
+        xL, GEAR.footY, zL, xL, top, zL,
+        xL - tick, GEAR.footY, zL, xL + tick, GEAR.footY, zL,
         xL - tick, top, zL, xL + tick, top, zL,
       ],
       '#8fb8e0',
@@ -405,33 +412,31 @@ export class DroneEngine {
       0.5,
     );
     // axis triad at floor datum
-    mk([0, fy, 0, 0.22, fy, 0], '#d26a5c', false, 0.9);
-    mk([0, fy, 0, 0, fy + 0.22, 0], '#7cc48a', false, 0.9);
-    mk([0, fy, 0, 0, fy, 0.22], '#5d9ae0', false, 0.9);
+    mk([0, fy, 0, 0.45, fy, 0], '#d26a5c', false, 0.9);
+    mk([0, fy, 0, 0, fy + 0.45, 0], '#7cc48a', false, 0.9);
+    mk([0, fy, 0, 0, fy, 0.45], '#5d9ae0', false, 0.9);
     // bounding brackets
-    const bx = half;
-    const bz = half;
-    const y0 = GEAR.skidY - 0.01;
-    const y1 = PROP.y + 0.02;
-    const s = 0.08;
+    const y0 = GEAR.footY - 0.01;
+    const y1 = top;
+    const sB = 0.18;
     const corners: number[] = [];
-    for (const x of [-bx, bx])
+    for (const x of [-half - 0.05, half + 0.05])
       for (const y of [y0, y1])
-        for (const z of [-bz, bz]) {
-          const sx = -Math.sign(x) * s;
-          const sy = -Math.sign(y - (y0 + y1) / 2) * s * 0.6;
-          const sz = -Math.sign(z) * s;
+        for (const z of [tailZ - 0.05, noseZ + 0.05]) {
+          const sx = -Math.sign(x) * sB;
+          const sy = -Math.sign(y - (y0 + y1) / 2) * sB * 0.5;
+          const sz = -Math.sign(z - (tailZ + noseZ) / 2) * sB;
           corners.push(x, y, z, x + sx, y, z, x, y, z, x, y + sy, z, x, y, z, x, y, z + sz);
         }
     mk(corners, '#6f9fcf', false, 0.45);
 
     this.dimAnchors = [
-      { p: new THREE.Vector3(0, fy, zL - 0.06), text: `SPAN ${ENVELOPE.span} mm` },
-      { p: new THREE.Vector3(xL + 0.1, fy, 0), text: `WHEELBASE ${ENVELOPE.wheelbase} mm` },
-      { p: new THREE.Vector3(xL + 0.08, (GEAR.skidY + top) / 2, zL), text: `H ${ENVELOPE.height} mm` },
-      { p: new THREE.Vector3(0.25, fy, 0), text: '+X' },
-      { p: new THREE.Vector3(0, fy + 0.25, 0), text: '+Y' },
-      { p: new THREE.Vector3(0, fy, 0.26), text: '+Z  FWD' },
+      { p: new THREE.Vector3(0, fy, zL - 0.12), text: `SPAN ${ENVELOPE.span} mm` },
+      { p: new THREE.Vector3(xL + 0.22, fy, (tailZ + noseZ) / 2), text: `LENGTH ${ENVELOPE.length} mm` },
+      { p: new THREE.Vector3(xL + 0.15, (GEAR.footY + top) / 2, zL), text: `H ${ENVELOPE.height} mm` },
+      { p: new THREE.Vector3(0.52, fy, 0), text: '+X' },
+      { p: new THREE.Vector3(0, fy + 0.52, 0), text: '+Y' },
+      { p: new THREE.Vector3(0, fy, 0.55), text: '+Z  FWD' },
     ];
   }
 
@@ -458,7 +463,9 @@ export class DroneEngine {
 
   // ─────────────────────────────────────────────────────────── camera
   private fitDistance() {
-    return this.controls.getDistanceToFitSphere(FIT_RADIUS);
+    // portrait screens: the long wing needs extra room horizontally
+    const portrait = this.camera.aspect < 1 ? 1 + (1 - this.camera.aspect) * 0.55 : 1;
+    return this.controls.getDistanceToFitSphere(FIT_RADIUS * portrait);
   }
 
   private sphericalPos(az: number, polar: number, dist: number, target = TARGET) {
@@ -524,7 +531,7 @@ export class DroneEngine {
     if (id === 'fasteners') return;
     const sphere = this.worldBox(node).getBoundingSphere(new THREE.Sphere());
     const r = Math.max(sphere.radius, 0.03);
-    const dist = clamp(this.controls.getDistanceToFitSphere(r) * 1.25, 0.12, 3.5);
+    const dist = clamp(this.controls.getDistanceToFitSphere(r) * 1.25, 0.12, 12);
     const pos = this.camera.position.clone();
     const tgt = this.controls.getTarget(new THREE.Vector3());
     const dir = pos.sub(tgt).normalize();
@@ -576,7 +583,13 @@ export class DroneEngine {
       // disabling is finished in the loop once the cut animates out
     }
     if (s.hidden !== p.hidden || s.view !== p.view) this.pickDirty = true;
+    if (s.explode >= 0.5 && p.explode < 0.5 && !s.cinematic) {
+      // pull back so the separated assemblies stay in frame
+      const want = this.fitDistance() * 1.35;
+      if (this.controls.distance < want) void this.controls.dollyTo(want, true);
+    }
     if (s.selected !== p.selected) {
+      this.pickDirty = true;
       this.selectionNode = s.selected ? this.model.nodes.get(s.selected) ?? null : null;
       this.outline.selectedObjects = this.selectionNode ? this.selectionNode.meshes : [];
       this.outline.enabled = !!this.selectionNode;
@@ -751,9 +764,14 @@ export class DroneEngine {
   }
 
   // ─────────────────────────────────────────────────────────── picking
+  /** Selecting a part that lives inside the skin ghosts the exterior so it is visible. */
+  private autoGhost(s: State) {
+    return !!s.selected && COMPONENT_MAP[s.selected]?.layer === 'internal';
+  }
+
   private rebuildPickTargets() {
     const s = getState();
-    const xrayish = s.view !== 'exterior';
+    const xrayish = s.view !== 'exterior' || this.autoGhost(s);
     this.pickTargets = [];
     for (const node of this.model.nodes.values()) {
       if (s.hidden[node.id]) continue;
@@ -957,7 +975,7 @@ export class DroneEngine {
 
     // ── view modes
     const xrT = s.view === 'xray' ? 1 : 0;
-    const ghT = s.view === 'internal' ? 1 : 0;
+    const ghT = s.view === 'internal' || (s.view === 'exterior' && this.autoGhost(s)) ? 1 : 0;
     if (Math.abs(this.xrayCur - xrT) > 0.001 || Math.abs(this.ghostCur - ghT) > 0.001) {
       this.xrayCur = approach(this.xrayCur, xrT, k);
       this.ghostCur = approach(this.ghostCur, ghT, k);
@@ -982,13 +1000,13 @@ export class DroneEngine {
     const bobT = s.autoRotate || s.presentation || s.cinematic ? 1 : 0;
     this.bobAmt = approach(this.bobAmt, bobT, 1 - Math.exp(-dt * 1.5));
     if (this.bobAmt > 0.001) {
-      this.model.root.position.y = Math.sin(this.time * 0.9) * 0.009 * this.bobAmt;
+      this.model.root.position.y = Math.sin(this.time * 0.9) * 0.02 * this.bobAmt;
       this.model.root.rotation.z = Math.sin(this.time * 0.55) * 0.006 * this.bobAmt;
       this.model.root.rotation.x = Math.sin(this.time * 0.43 + 1) * 0.004 * this.bobAmt;
       active = true;
     }
     const lift = this.model.root.position.y;
-    this.shadow.scale.setScalar(1 - lift * 2.5);
+    this.shadow.scale.setScalar(1 - lift * 1.2);
 
     // ── spin test
     const spinT = s.spinTest ? 22 : 0;
@@ -1110,10 +1128,10 @@ export class DroneEngine {
     if (s.section) this.sectionAxis = s.section;
     this.sectionAmt = approach(this.sectionAmt, on ? 1 : 0, k);
     const axis = this.sectionAxis;
-    const range = axis === 'top' ? 0.14 : 0.32;
-    const base = axis === 'top' ? 0.0 : 0.0;
+    const range = SECTION_RANGE[axis];
+    const base = axis === 'top' ? 0.05 : axis === 'front' ? -0.25 : 0;
     const cut = base + s.sectionOffset * range;
-    const far = axis === 'top' ? 0.8 : 1.2;
+    const far = axis === 'top' ? 1.0 : axis === 'side' ? 3.2 : 1.6;
     const c = far + (cut - far) * easeInOut(clamp(this.sectionAmt, 0, 1));
     const n = axis === 'top' ? new THREE.Vector3(0, -1, 0) : axis === 'side' ? new THREE.Vector3(-1, 0, 0) : new THREE.Vector3(0, 0, -1);
     this.sectionPlane.normal.copy(n);
@@ -1124,15 +1142,15 @@ export class DroneEngine {
     v.rotation.set(0, 0, 0);
     if (axis === 'top') {
       v.rotation.x = -Math.PI / 2;
-      v.position.y = c;
-      v.scale.set(1.9, 1.9, 1);
+      v.position.set(0, c, -0.25);
+      v.scale.set(5.6, 3.2, 1);
     } else if (axis === 'side') {
       v.rotation.y = Math.PI / 2;
-      v.position.set(c, -0.12, 0);
-      v.scale.set(1.9, 0.7, 1);
+      v.position.set(c, 0.1, -0.25);
+      v.scale.set(3.2, 0.95, 1);
     } else {
-      v.position.set(0, -0.12, c);
-      v.scale.set(1.9, 0.7, 1);
+      v.position.set(0, 0.1, c);
+      v.scale.set(5.6, 0.95, 1);
     }
     v.children.forEach((ch) => {
       const m = (ch as THREE.Mesh).material as THREE.Material & { opacity: number };
@@ -1168,9 +1186,11 @@ export class DroneEngine {
         node.group.position.set(px, py, pz);
         changed = true;
       }
-      if (d.id.startsWith('prop-')) {
-        const dir = d.id === 'prop-03' || d.id === 'prop-04' ? -1 : 1;
+      if (d.id.startsWith('lift-prop-')) {
+        const dir = d.id === 'lift-prop-03' || d.id === 'lift-prop-04' ? -1 : 1;
         node.spin.rotation.y = (this.spinAngle + local * 0.9) * dir;
+      } else if (d.id === 'cruise-prop') {
+        node.spin.rotation.z = this.spinAngle * 0.8 + local * 0.6;
       }
       if (local > 0.001 && (ex[0] || ex[1] || ex[2])) {
         guidePos.setXYZ(gi * 2, node.basePosition.x, node.basePosition.y, node.basePosition.z);

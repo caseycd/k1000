@@ -1,4 +1,5 @@
 import { useStore } from '../store';
+import { AIRCRAFT } from '../data/components';
 
 /**
  * Screen-frame elements of the TECH OVERLAY (the 3D centerlines, rotor discs,
@@ -22,12 +23,22 @@ export function TechnicalOverlay() {
           <i className="sw center" /> CENTERLINE
         </div>
         <div>
-          <i className="sw disc" /> ROTOR DISC Ø760
+          <i className="sw disc" /> ROTOR DISCS
         </div>
         <div>
           <i className="sw dim" /> ENVELOPE (ILLUSTRATIVE)
         </div>
-        <div className="mono dim">GRID 100 mm · RING 500 mm</div>
+        <div className="mono dim">GRID 250 mm · RING 1 m · SCALE ILLUSTRATIVE</div>
+        <div className="k-legend-facts">
+          <div>
+            {AIRCRAFT.name} · <em className="k-pub">PUBLISHED</em>
+          </div>
+          {AIRCRAFT.published.slice(0, 6).map((f) => (
+            <div key={f.label}>
+              {f.label.toUpperCase()} <b>{f.value}</b>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

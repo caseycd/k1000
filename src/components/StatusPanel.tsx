@@ -10,6 +10,7 @@ export function StatusPanel() {
   const engineer = useStore((s) => s.engineer);
   const view = useStore((s) => s.view);
   const explode = useStore((s) => s.explode);
+  const modelSource = useStore((s) => s.modelSource);
   const [edge, setEdge] = useState<string>('—');
   const clicks = useRef<number[]>([]);
 
@@ -46,7 +47,7 @@ export function StatusPanel() {
       <button className="k-brand" onClick={onLogo} aria-label="K1000 Digital Twin">
         <span className="k-brand-mark">K1000</span>
         <span className="k-brand-sub">
-          DIGITAL TWIN{engineer && <em> · ENG</em>}
+          ULE · DIGITAL TWIN{engineer && <em> · ENG</em>}
         </span>
       </button>
       <dl className="k-status-grid fade-on-idle">
@@ -54,12 +55,16 @@ export function StatusPanel() {
         <dd>
           <i className="k-dot ok" /> ONLINE
         </dd>
+        <dt>AIRFRAME</dt>
+        <dd>eVTOL · SOLAR</dd>
         <dt>COMPONENTS</dt>
         <dd>{COMPONENTS.length}</dd>
         <dt>INSPECTION</dt>
         <dd className={inspection !== 'READY' ? 'accent' : ''}>{inspection}</dd>
         <dt>CONFIG</dt>
         <dd>{config}</dd>
+        <dt>MODEL</dt>
+        <dd>{modelSource === 'cad' ? 'CAD (SUPPLIED)' : 'VISUALIZATION'}</dd>
         <dt>EDGE</dt>
         <dd>{edge}</dd>
       </dl>

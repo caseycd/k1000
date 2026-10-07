@@ -9,7 +9,7 @@ export function createGridMaterial() {
       uColor: { value: new THREE.Color('#4a6075') },
       uMajor: { value: new THREE.Color('#6d8fb2') },
       uOpacity: { value: 0.5 },
-      uFade: { value: 3.0 },
+      uFade: { value: 9.0 },
       uOverlay: { value: 0 },
     },
     vertexShader: /* glsl */ `
@@ -34,17 +34,17 @@ export function createGridMaterial() {
       }
       void main() {
         vec2 p = vWorld.xz;
-        float minor = gridLine(p, 0.1, 1.0);
-        float major = gridLine(p, 0.5, 1.2);
+        float minor = gridLine(p, 0.25, 1.0);
+        float major = gridLine(p, 1.0, 1.2);
         float axis = 1.0 - min(min(abs(p.x), abs(p.y)) / (fwidth(p.x) * 1.5 + 0.0005), 1.0);
         float r = length(p);
-        float fade = 1.0 - smoothstep(0.4, uFade, r);
+        float fade = 1.0 - smoothstep(1.0, uFade, r);
         // concentric range rings in overlay mode
         float ring = 0.0;
         if (uOverlay > 0.001) {
-          float rr = r / 0.5;
+          float rr = r / 1.0;
           float d = abs(fract(rr - 0.5) - 0.5) / fwidth(rr);
-          ring = (1.0 - min(d, 1.0)) * uOverlay * step(r, 2.6);
+          ring = (1.0 - min(d, 1.0)) * uOverlay * step(r, 6.5);
         }
         float a = (minor * 0.14 + major * 0.42 + axis * 0.55 * uOverlay + ring * 0.35) * fade * fade * uOpacity;
         vec3 col = mix(uColor, uMajor, clamp(major + axis * uOverlay + ring, 0.0, 1.0));

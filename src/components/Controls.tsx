@@ -49,7 +49,7 @@ export function ToolRail() {
         <RailButton active={explode > 0.01} onClick={actions.toggleExplode} icon={<IconExplode />} label="EXPLODE" hint="E" />
         <RailButton active={view === 'internal'} onClick={() => actions.toggleView('internal')} icon={<IconInternal />} label="INTERNAL" hint="T" />
         <RailButton active={view === 'xray'} onClick={() => actions.toggleView('xray')} icon={<IconXray />} label="X-RAY" hint="X" />
-        <RailButton active={!!section} onClick={() => actions.toggleSection()} icon={<IconSection />} label="SECTION" hint="K" />
+        <RailButton active={!!section} onClick={() => actions.toggleSection()} icon={<IconSection />} label="SECTION" hint="S" />
       </div>
       <div className="k-rail-sep" />
       <div className="k-rail-group">
@@ -157,7 +157,7 @@ export function SettingsMenu() {
               <span><kbd>M</kbd> measure</span>
               <span><kbd>T</kbd> internal</span>
               <span><kbd>X</kbd> x-ray</span>
-              <span><kbd>K</kbd> section</span>
+              <span><kbd>S</kbd> section</span>
               <span><kbd>O</kbd> overlay</span>
               <span><kbd>F</kbd> focus</span>
               <span><kbd>H</kbd> hide part</span>
@@ -166,8 +166,9 @@ export function SettingsMenu() {
             </div>
           </section>
           <p className="k-disclaimer">
-            Interactive visualization. Geometry is procedurally generated and all specifications are illustrative — not
-            official K1000 engineering data.
+            Interactive visualization of the Kraus Hamdani Aerospace K1000ULE. Geometry is procedurally modelled from public
+            product imagery; absolute scale and internal layout are illustrative. Specs tagged PUBLISHED come from the public
+            product page — everything else is a placeholder, not official engineering data.
           </p>
         </div>
       )}

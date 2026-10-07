@@ -145,14 +145,18 @@ export function surfaceSlab(
     for (let j = 0; j <= sv; j++) {
       const v = v0 + ((v1 - v0) * j) / sv;
       fn(u, v, a);
-      fn(Math.min(1, u + eps), v, b);
-      fn(Math.max(0, u - eps), v, c);
+      fn(u + eps, v, b);
+      fn(u - eps, v, c);
       du.subVectors(b, c);
       fn(u, v + eps, b);
       fn(u, v - eps, c);
       dv.subVectors(b, c);
+      const lu = du.length();
+      const lv = dv.length();
+      if (lu > 1e-12) du.divideScalar(lu);
+      if (lv > 1e-12) dv.divideScalar(lv);
       n.crossVectors(du, dv);
-      if (n.lengthSq() < 1e-14) {
+      if (lu < 1e-12 || lv < 1e-12 || n.lengthSq() < 1e-8) {
         // degenerate pole: point along the body axis
         n.set(0, 0, u < 0.5 ? -1 : 1);
       }
@@ -390,4 +394,101 @@ export function surfaceFrame(fn: SurfaceFn, u: number, v: number) {
   const axis = new THREE.Vector3(0, p.y > 0 ? 0.01 : -0.01, p.z * 0.6);
   if (n.dot(p.clone().sub(axis)) < 0) n.negate();
   return { p, n, du: du.normalize(), dv: dv.normalize() };
+}
+
+// ───────────────────────────────────────────────────────── lifting surfaces
+export interface LoftStation {
+  /** spanwise coordinate (x for wings, y for fins) */
+  s: number;
+  /** offset of the chord line in the thickness direction (y for wings, x for fins) */
+  t: number;
+  /** leading-edge z */
+  le: number;
+  chord: number;
+  /** thickness / chord */
+  tc: number;
+}
+
+/** NACA-style cambered section: returns [upper, lower] thickness-direction offsets as chord fractions. */
+export function airfoilAt(xc: number, tc: number, camber = 0.035): [number, number] {
+  const x = Math.min(1, Math.max(0, xc));
+  const yt = 5 * tc * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1036 * x ** 4);
+  const p = 0.4;
+  const yc = camber > 0 ? (x < p ? (camber / (p * p)) * (2 * p * x - x * x) : (camber / ((1 - p) * (1 - p))) * (1 - 2 * p + 2 * p * x - x * x)) : 0;
+  return [yc + yt, yc - yt];
+}
+
+/**
+ * Closed loft of an airfoil along spanwise stations, optionally limited to the chord
+ * fraction range [f0, f1] (used to split control surfaces from the main surface).
+ * `axis = 'x'` builds a wing (span along X, thickness along Y);
+ * `axis = 'y'` builds a fin (span along Y, thickness along X).
+ */
+export function wingLoft(stations: LoftStation[], f0 = 0, f1 = 1, ring = 22, camber = 0.035, axis: 'x' | 'y' = 'x') {
+  const n = ring;
+  const rows: THREE.Vector3[][] = stations.map((st) => {
+    const pts: THREE.Vector3[] = [];
+    for (let k = 0; k < n * 2; k++) {
+      const upper = k < n;
+      const s = upper ? k / n : (k - n) / n;
+      const e = (1 - Math.cos(Math.PI * s)) / 2;
+      const xc = upper ? f0 + (f1 - f0) * e : f1 - (f1 - f0) * e;
+      const [u, l] = airfoilAt(xc, st.tc, camber);
+      const th = st.t + (upper ? u : l) * st.chord;
+      const z = st.le - xc * st.chord;
+      pts.push(axis === 'x' ? new THREE.Vector3(st.s, th, z) : new THREE.Vector3(th, st.s, z));
+    }
+    return pts;
+  });
+  const P: number[] = [];
+  const I: number[] = [];
+  const ringN = n * 2;
+  for (const r of rows) for (const p of r) P.push(p.x, p.y, p.z);
+  for (let i = 0; i < rows.length - 1; i++)
+    for (let k = 0; k < ringN; k++) {
+      const a = i * ringN + k;
+      const b = i * ringN + ((k + 1) % ringN);
+      const c = (i + 1) * ringN + ((k + 1) % ringN);
+      const d = (i + 1) * ringN + k;
+      I.push(a, b, c, a, c, d);
+    }
+  const cap = (i: number, flip: boolean) => {
+    const c = new THREE.Vector3();
+    for (const p of rows[i]) c.add(p);
+    c.divideScalar(ringN);
+    const ci = P.length / 3;
+    P.push(c.x, c.y, c.z);
+    for (let k = 0; k < ringN; k++) {
+      const a = i * ringN + k;
+      const b = i * ringN + ((k + 1) % ringN);
+      if (flip) I.push(ci, b, a);
+      else I.push(ci, a, b);
+    }
+  };
+  cap(0, false);
+  cap(rows.length - 1, true);
+  // orientation check: an upper-surface triangle must face +thickness
+  const mid = Math.floor((rows.length - 1) / 2);
+  const ia = mid * ringN + Math.floor(n / 2);
+  const ib = mid * ringN + Math.floor(n / 2) + 1;
+  const ic = (mid + 1) * ringN + Math.floor(n / 2) + 1;
+  const va = new THREE.Vector3(P[ia * 3], P[ia * 3 + 1], P[ia * 3 + 2]);
+  const vb = new THREE.Vector3(P[ib * 3], P[ib * 3 + 1], P[ib * 3 + 2]);
+  const vc = new THREE.Vector3(P[ic * 3], P[ic * 3 + 1], P[ic * 3 + 2]);
+  const nrm = new THREE.Vector3().crossVectors(vb.sub(va), vc.sub(va));
+  const up = axis === 'x' ? nrm.y : nrm.x;
+  if (up < 0) for (let i = 0; i < I.length; i += 3) [I[i + 1], I[i + 2]] = [I[i + 2], I[i + 1]];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setIndex(I);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Solid of revolution along +Z from [radius, z] pairs (z ascending), placed at (x, y). */
+export function latheZ(pts: [number, number][], seg = 32, x = 0, y = 0) {
+  const g = lathe(pts.map(([r, z]) => [r, z] as [number, number]), seg);
+  g.rotateX(Math.PI / 2); // lathe axis Y → Z (y' = -z, z' = y)
+  g.translate(x, y, 0);
+  return g;
 }

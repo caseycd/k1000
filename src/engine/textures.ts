@@ -229,3 +229,42 @@ export function wearMark() {
   }
   return finish(c);
 }
+
+/** Monocrystalline solar panel: grid of cells with thin busbars. `cols`×`rows` cells per panel. */
+export function solarTexture(cols = 8, rows = 4) {
+  const W = 512;
+  const H = 256;
+  const { c, ctx } = canvas(W, H);
+  ctx.fillStyle = '#c9cdd2';
+  ctx.fillRect(0, 0, W, H);
+  const m = 6;
+  const cw = (W - m * 2) / cols;
+  const ch = (H - m * 2) / rows;
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++) {
+      const x0 = m + x * cw + 1;
+      const y0 = m + y * ch + 1;
+      const g = ctx.createLinearGradient(x0, y0, x0 + cw, y0 + ch);
+      g.addColorStop(0, '#141b26');
+      g.addColorStop(0.5, '#1b2433');
+      g.addColorStop(1, '#121822');
+      ctx.fillStyle = g;
+      ctx.fillRect(x0, y0, cw - 2, ch - 2);
+      ctx.strokeStyle = 'rgba(170,185,205,0.35)';
+      ctx.lineWidth = 1;
+      for (let k = 1; k < 4; k++) {
+        ctx.beginPath();
+        ctx.moveTo(x0 + ((cw - 2) * k) / 4, y0);
+        ctx.lineTo(x0 + ((cw - 2) * k) / 4, y0 + ch - 2);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(120,140,165,0.12)';
+      for (let k = 2; k < ch - 2; k += 4) {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0 + k);
+        ctx.lineTo(x0 + cw - 2, y0 + k);
+        ctx.stroke();
+      }
+    }
+  return finish(c);
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { CATEGORIES, COMPONENTS, getComponent, type DroneComponent } from '../data/components';
-import { ARM, ARM_LAYOUT, PROP } from '../data/layout';
+import { BOOM, CRUISE, FUSELAGE, LIFT, LIFT_LAYOUT, TAIL, WING, wingStation } from '../data/layout';
 import { actions } from '../utils/actions';
 import { IconClose, IconEye, IconFocus, IconIsolate } from './Icons';
 import { sound } from '../utils/sound';
@@ -118,14 +118,20 @@ export function ComponentInspector() {
             <table className="k-specs">
               <tbody>
                 {c.illustrativeSpecifications.map((s) => (
-                  <tr key={s.label}>
-                    <th>{s.label}</th>
+                  <tr key={s.label} className={s.published ? 'pub' : ''}>
+                    <th>
+                      {s.label}
+                      {s.published && <em className="k-pub">PUBLISHED</em>}
+                    </th>
                     <td>{s.value}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="k-note">Illustrative values for visualization only — not official K1000 specifications.</p>
+            <p className="k-note">
+              <em className="k-pub">PUBLISHED</em> values are from the manufacturer’s public K1000ULE page. All other values are
+              illustrative placeholders, not official specifications.
+            </p>
           </>
         )}
         {tab === 'location' && <LocationTab c={c} />}
@@ -161,14 +167,29 @@ export function ComponentInspector() {
   );
 }
 
-/** Top-down + side schematic locator with the component marked. */
+/** Top-down planform locator with the component marked. */
 function LocationTab({ c }: { c: DroneComponent }) {
   const [x, y, z] = c.position;
-  const S = 64; // px per metre in schematic
+  const S = 32; // px per metre
   const cx = 90;
-  const cy = 74;
-  const pX = (wx: number) => cx - wx * S; // starboard (-X) to the right
-  const pZ = (wz: number) => cy - wz * S; // nose up
+  const cy = 62;
+  const zc = -0.25;
+  const pX = (wx: number) => cx - wx * S; // port (+X) to the left, viewed from above
+  const pZ = (wz: number) => cy - (wz - zc) * S; // nose up
+  const wingPts: string[] = [];
+  const steps = 24;
+  for (let i = 0; i <= steps; i++) {
+    const xx = (i / steps) * WING.halfSpan;
+    wingPts.push(`${pX(xx)},${pZ(wingStation(xx).le)}`);
+  }
+  for (let i = steps; i >= -steps; i--) {
+    const xx = (i / steps) * WING.halfSpan;
+    wingPts.push(`${pX(xx)},${pZ(wingStation(Math.abs(xx)).te)}`);
+  }
+  for (let i = -steps; i <= 0; i++) {
+    const xx = (i / steps) * WING.halfSpan;
+    wingPts.push(`${pX(xx)},${pZ(wingStation(Math.abs(xx)).le)}`);
+  }
   return (
     <>
       <div className="k-loc-grid">
@@ -185,32 +206,30 @@ function LocationTab({ c }: { c: DroneComponent }) {
           <dd>{(z * 1000).toFixed(0)} mm</dd>
         </div>
       </div>
-      <svg className="k-locator" viewBox="0 0 180 148" aria-label="Top-down locator">
+      <svg className="k-locator" viewBox="0 0 180 124" aria-label="Top-down locator">
         <text x="4" y="10">
           TOP · DATUM
         </text>
-        {ARM_LAYOUT.map((a) => {
-          const mx = a.dir[0] * ARM.tipRadius;
-          const mz = a.dir[1] * ARM.tipRadius;
-          return (
-            <g key={a.index}>
-              <line x1={pX(a.dir[0] * 0.15)} y1={pZ(a.dir[1] * 0.15)} x2={pX(mx)} y2={pZ(mz)} />
-              <circle cx={pX(mx)} cy={pZ(mz)} r={PROP.radius * S} className="disc" />
-              <circle cx={pX(mx)} cy={pZ(mz)} r={3} />
-            </g>
-          );
-        })}
-        <ellipse cx={cx} cy={cy} rx={0.17 * S} ry={0.29 * S} className="body" />
-        <path d={`M${cx} ${cy - 0.29 * S - 6} l-3 5 h6z`} className="nose" />
-        <line x1={cx - 84} y1={cy} x2={cx + 84} y2={cy} className="axis" />
-        <line x1={cx} y1={cy - 70} x2={cx} y2={cy + 70} className="axis" />
+        <line x1={cx - 86} y1={pZ(0)} x2={cx + 86} y2={pZ(0)} className="axis" />
+        <line x1={cx} y1={4} x2={cx} y2={120} className="axis" />
+        <polygon points={wingPts.join(' ')} className="body" />
+        <rect x={pX(TAIL.stabHalfSpan)} y={pZ(TAIL.stabLE)} width={TAIL.stabHalfSpan * 2 * S} height={(TAIL.stabLE - TAIL.stabTE) * S} className="body" />
+        <line x1={cx} y1={pZ(FUSELAGE.podEndZ)} x2={cx} y2={pZ(FUSELAGE.tailEndZ)} className="boom" />
+        <ellipse cx={cx} cy={pZ((FUSELAGE.noseZ + FUSELAGE.podEndZ) / 2)} rx={0.088 * S} ry={((FUSELAGE.noseZ - FUSELAGE.podEndZ) / 2) * S} className="body" />
+        {[1, -1].map((sd) => (
+          <line key={sd} x1={pX(sd * BOOM.x)} y1={pZ(BOOM.frontZ)} x2={pX(sd * BOOM.x)} y2={pZ(BOOM.rearZ)} className="boom" />
+        ))}
+        {LIFT_LAYOUT.map((a) => (
+          <circle key={a.index} cx={pX(a.x)} cy={pZ(a.z)} r={LIFT.propRadius * S} className="disc" />
+        ))}
+        <line x1={cx - CRUISE.propRadius * S} y1={pZ(CRUISE.z)} x2={cx + CRUISE.propRadius * S} y2={pZ(CRUISE.z)} className="boom" />
         <circle cx={pX(x)} cy={pZ(z)} r={4.5} className="mark-ring" />
         <circle cx={pX(x)} cy={pZ(z)} r={2} className="mark" />
       </svg>
       <div className="k-assembly-path">
-        K1000 <span>›</span> {CATEGORIES.find((k) => k.id === c.category)?.label} <span>›</span> {c.name}
+        K1000ULE <span>›</span> {CATEGORIES.find((k) => k.id === c.category)?.label} <span>›</span> {c.name}
       </div>
-      <p className="k-note">Coordinates relative to the airframe datum (illustrative). +Z forward, +Y up.</p>
+      <p className="k-note">Coordinates relative to the airframe datum at an illustrative scale. +Z forward, +Y up, +X port.</p>
     </>
   );
 }

@@ -3,13 +3,16 @@ import { actions } from '../utils/actions';
 import { IconClose } from './Icons';
 
 const AXES: SectionAxis[] = ['top', 'side', 'front'];
+/** must match SECTION_RANGE in DroneEngine (metres → mm) */
+const SECTION_RANGE_MM = { top: 150, side: 2600, front: 1300 } as const;
+const SECTION_BASE_MM = { top: 50, side: 0, front: -250 } as const;
 
 /** Cross-section plane chooser + cut-position slider. */
 export function SectionControl() {
   const section = useStore((s) => s.section);
   const offset = useStore((s) => s.sectionOffset);
   const visible = !!section;
-  const range = section === 'top' ? 140 : 320;
+  const range = section ? SECTION_RANGE_MM[section] : 0;
   return (
     <div className={`k-dock-item k-section ${visible ? 'show' : ''}`} aria-hidden={!visible}>
       <div className="k-dock-title">
@@ -38,7 +41,7 @@ export function SectionControl() {
           tabIndex={visible ? 0 : -1}
           style={{ ['--v' as string]: `${((offset + 1) / 2) * 100}%` }}
         />
-        <small className="mono">{(offset * range).toFixed(0).padStart(4, ' ')} mm</small>
+        <small className="mono">{(SECTION_BASE_MM[section ?? 'top'] + offset * range).toFixed(0).padStart(5, ' ')} mm</small>
       </div>
     </div>
   );

@@ -50,14 +50,14 @@ export function IntroOverlay() {
       <div className={`k-loader ${phase !== 'dark' ? 'gone' : ''}`} aria-hidden={phase !== 'dark'}>
         <div className="k-loader-inner">
           <div className="k-loader-title">K1000</div>
-          <div className="k-loader-sub">INITIALIZING DIGITAL TWIN</div>
+          <div className="k-loader-sub">ULE · INITIALIZING DIGITAL TWIN</div>
           <div className="k-loader-bar">
             <i style={{ transform: `scaleX(${Math.max(0.04, progress)})` }} />
           </div>
         </div>
       </div>
       <div className={`k-intro-msg ${message ? 'show' : ''}`} aria-live="polite">
-        <div className="k-intro-title">EXPLORE THE K1000</div>
+        <div className="k-intro-title">EXPLORE THE K1000ULE</div>
         <div className="k-intro-lines">
           <span>DRAG TO ROTATE</span>
           <span>SCROLL TO ZOOM</span>
@@ -83,7 +83,7 @@ export function Hints() {
       {items.map((t) => (
         <span key={t}>{t}</span>
       ))}
-      <div className="k-hints-disclaimer">INTERACTIVE VISUALIZATION · ILLUSTRATIVE GEOMETRY &amp; DATA</div>
+      <div className="k-hints-disclaimer">INTERACTIVE VISUALIZATION · GEOMETRY TRACED FROM PUBLIC IMAGERY · SCALE ILLUSTRATIVE</div>
     </div>
   );
 }

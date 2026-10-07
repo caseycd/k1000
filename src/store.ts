@@ -14,6 +14,8 @@ export interface Measurement {
 export interface State {
   ready: boolean;
   loadProgress: number;
+  /** 'cad' when a real model was loaded from /models/k1000ule.glb */
+  modelSource: 'procedural' | 'cad';
   introPhase: 'dark' | 'reveal' | 'done';
   interacted: boolean;
 
@@ -64,6 +66,7 @@ let toastId = 0;
 export const useStore = create<State>((set, get) => ({
   ready: false,
   loadProgress: 0,
+  modelSource: 'procedural',
   introPhase: 'dark',
   interacted: false,
 

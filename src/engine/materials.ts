@@ -47,6 +47,7 @@ export function patchMaterial(mat: THREE.Material, cu: ComponentUniforms) {
 export type MatKey =
   | 'shell'
   | 'panel'
+  | 'radome'
   | 'seam'
   | 'carbon'
   | 'aluminum'
@@ -86,9 +87,10 @@ const phys = (p: THREE.MeshPhysicalMaterialParameters) => new THREE.MeshPhysical
 export function createMaterialLibrary(): MaterialLibrary {
   const carbon = carbonTexture();
   return {
-    shell: phys({ color: '#3a4047', roughness: 0.46, metalness: 0.18, clearcoat: 0.75, clearcoatRoughness: 0.28 }),
-    panel: phys({ color: '#454c54', roughness: 0.4, metalness: 0.2, clearcoat: 0.9, clearcoatRoughness: 0.22 }),
-    seam: std({ color: '#07080a', roughness: 0.9, metalness: 0 }),
+    shell: phys({ color: '#e6e9ec', roughness: 0.42, metalness: 0.04, clearcoat: 0.55, clearcoatRoughness: 0.3 }),
+    panel: phys({ color: '#dde1e5', roughness: 0.38, metalness: 0.04, clearcoat: 0.7, clearcoatRoughness: 0.25 }),
+    radome: phys({ color: '#2b3036', roughness: 0.32, metalness: 0.1, clearcoat: 0.8, clearcoatRoughness: 0.2 }),
+    seam: std({ color: '#4a5058', roughness: 0.8, metalness: 0 }),
     carbon: phys({ color: '#ffffff', map: carbon, roughness: 0.38, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.1 }),
     aluminum: std({ color: '#c3cad2', roughness: 0.3, metalness: 1 }),
     anodized: std({ color: '#30353c', roughness: 0.36, metalness: 0.85 }),

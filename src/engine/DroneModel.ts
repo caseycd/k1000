@@ -1,37 +1,54 @@
 /**
- * Procedural K1000 visualization model.
+ * Procedural K1000ULE visualization model.
  *
- * No official K1000 CAD data is used: every part is generated from parametric
- * geometry approximating a professional heavy-lift quadcopter. Each entry in the
- * component database gets its own THREE.Group (pivoted at its anchor) so it can be
- * exploded, hidden, highlighted and inspected independently.
+ * No official CAD data is used. Geometry is generated from parametric shapes whose
+ * proportions were traced from Kraus Hamdani Aerospace's public product imagery:
+ * a high-aspect-ratio solar wing, slender fuselage pod with nose tractor propeller,
+ * long tail boom with T-tail, and two under-wing booms carrying four lift rotors.
+ * Absolute scale and internal layout are illustrative.
  *
- * Draw calls are kept low by merging each component's geometry per material.
- * Fasteners use InstancedMesh.
+ * If a real model is supplied at /models/k1000ule.glb it replaces this geometry
+ * (see GltfModel.ts). Each entry in the component database gets its own THREE.Group
+ * so it can be exploded, hidden, highlighted and inspected independently. Draw calls
+ * are kept low by merging each component's geometry per material; fasteners use
+ * InstancedMesh.
  */
 import * as THREE from 'three';
 import { COMPONENTS, type DroneComponent } from '../data/components';
-import { ARM, ARM_LAYOUT, BODY, GEAR, MOTOR, PROP, armYaw, pad } from '../data/layout';
+import {
+  BOOM,
+  BOOM_Y,
+  CRUISE,
+  FUSELAGE,
+  GEAR,
+  LIFT,
+  LIFT_LAYOUT,
+  MOTOR_BASE_Y,
+  TAIL,
+  WING,
+  pad,
+  wingStation,
+  wingY,
+} from '../data/layout';
 import {
   alignY,
+  airfoilAt,
   box,
-  circlePath,
   cyl,
   lathe,
+  latheZ,
   merge,
-  plate,
   propBlade,
   rbox,
   scaleUV,
-  slotPath,
   sphere,
-  surfaceFrame,
   surfaceSlab,
   tint,
   torus,
   tube,
-  tubeCurve,
+  wingLoft,
   xf,
+  type LoftStation,
   type SurfaceFn,
   type V3,
 } from './geometry';
@@ -43,7 +60,7 @@ import {
   type MatKey,
   type MaterialLibrary,
 } from './materials';
-import { armDecal, glowTexture, serialPlate, wearMark } from './textures';
+import { glowTexture, serialPlate, solarTexture, wearMark } from './textures';
 
 export interface ComponentNode {
   id: string;
@@ -75,23 +92,6 @@ export interface DroneModel {
   recLamp: THREE.MeshStandardMaterial[];
   triangles: number;
 }
-
-// ───────────────────────────────────────────────────────── body surface
-const SE = 3.0;
-const sp = (c: number, n: number) => Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
-
-export const bodySurface: SurfaceFn = (u0, v, out) => {
-  const u = clamp01(u0);
-  const s = Math.max(0, Math.sin(Math.PI * u));
-  const a = BODY.halfWidth * Math.pow(s, 0.42) * (1 - 0.1 * u);
-  const top = BODY.topHeight * Math.pow(s, 0.5) * (1 - 0.28 * u * u);
-  const bot = BODY.bottomHeight * Math.pow(s, 0.4);
-  const c = Math.cos(v);
-  const sn = Math.sin(v);
-  out.set(a * sp(c, SE), (sn >= 0 ? top : bot) * sp(sn, SE), -BODY.length / 2 + u * BODY.length);
-  return out;
-};
 
 const PI = Math.PI;
 const v3 = (a: V3) => new THREE.Vector3(...a);
@@ -153,69 +153,149 @@ function fastenerGeometry() {
 }
 
 // ───────────────────────────────────────────────────────── component builders
-const dirOf = (i: number) => {
-  const a = ARM_LAYOUT[i - 1];
-  return new THREE.Vector3(a.dir[0], 0, a.dir[1]);
-};
-const perpOf = (i: number) => {
-  const d = dirOf(i);
-  return new THREE.Vector3(-d.z, 0, d.x);
-};
-const at = (i: number, r: number, y: number, side = 0): V3 => {
-  const d = dirOf(i);
-  const p = perpOf(i);
-  return [d.x * r + p.x * side, y, d.z * r + p.z * side];
-};
 
-function bodyPatch(b: Builder, mat: MatKey, u0: number, u1: number, v0: number, v1: number, thick: number, off: number, su = 16, sv = 16) {
-  b.add(mat, surfaceSlab(bodySurface, u0, u1, v0, v1, su, sv, thick, off));
+// ───────────────────────────────────────────────────────── fuselage surface
+/** [z, halfWidth, top, bottom] stations traced from the reference imagery. */
+const FS: [number, number, number, number][] = [
+  [0.84, 0.066, 0.064, 0.066],
+  [0.7, 0.08, 0.08, 0.085],
+  [0.5, 0.088, 0.088, 0.095],
+  [0.3, 0.088, 0.092, 0.093],
+  [0.1, 0.084, 0.092, 0.085],
+  [-0.05, 0.072, 0.088, 0.07],
+  [-0.2, 0.052, 0.07, 0.05],
+  [-0.4, 0.034, 0.045, 0.033],
+  [-0.62, 0.025, 0.026, 0.025],
+];
+const FUSE_Z0 = FS[0][0];
+const FUSE_Z1 = FS[FS.length - 1][0];
+const cr = (p0: number, p1: number, p2: number, p3: number, t: number) =>
+  0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
+
+export function fuselageProfile(z: number): [number, number, number] {
+  const zc = Math.min(FUSE_Z0, Math.max(FUSE_Z1, z));
+  let i = 0;
+  while (i < FS.length - 2 && zc < FS[i + 1][0]) i++;
+  const a = FS[i];
+  const b = FS[i + 1];
+  const t = (a[0] - zc) / (a[0] - b[0]);
+  const p0 = FS[Math.max(0, i - 1)];
+  const p3 = FS[Math.min(FS.length - 1, i + 2)];
+  return [1, 2, 3].map((k) => cr(p0[k], a[k], b[k], p3[k], t)) as [number, number, number];
 }
 
-/** Orient a geometry (built with X=along, Y=normal, Z=across) onto the body surface. */
-function onSurface(g: THREE.BufferGeometry, u: number, v: number, lift: number, alongU = true) {
-  const f = surfaceFrame(bodySurface, u, v);
-  const x = (alongU ? f.du : f.dv).clone().normalize();
-  const y = f.n.clone();
-  const z = new THREE.Vector3().crossVectors(x, y).normalize();
-  x.crossVectors(y, z).normalize();
-  const m = new THREE.Matrix4().makeBasis(x, y, z);
-  m.setPosition(f.p.clone().addScaledVector(f.n, lift));
+const SE = 2.5;
+const sp = (c: number, n: number) => Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
+const zToU = (z: number) => (FUSE_Z0 - z) / (FUSE_Z0 - FUSE_Z1);
+
+export const fuselageSurface: SurfaceFn = (u, v, out) => {
+  const z = FUSE_Z0 - Math.min(1, Math.max(0, u)) * (FUSE_Z0 - FUSE_Z1);
+  const [w, top, bot] = fuselageProfile(z);
+  const c = Math.cos(v);
+  const s = Math.sin(v);
+  out.set(w * sp(c, SE), (s >= 0 ? top : bot) * sp(s, SE), z);
+  return out;
+};
+
+function fusePatch(b: Builder, mat: MatKey, z0: number, z1: number, v0: number, v1: number, thick: number, off: number, su = 14, sv = 14) {
+  b.add(mat, surfaceSlab(fuselageSurface, zToU(z1), zToU(z0), v0, v1, su, sv, thick, off));
+}
+
+/** Place a geometry (X = along body, Y = surface normal, Z = across) on the fuselage at (z, v). */
+function onFuselage(g: THREE.BufferGeometry, z: number, v: number, lift: number) {
+  const u = zToU(z);
+  const p = fuselageSurface(u, v, new THREE.Vector3());
+  const e = 1e-3;
+  const du = fuselageSurface(u + e, v, new THREE.Vector3()).sub(fuselageSurface(u - e, v, new THREE.Vector3())).normalize();
+  const dv = fuselageSurface(u, v + e, new THREE.Vector3()).sub(fuselageSurface(u, v - e, new THREE.Vector3())).normalize();
+  const n = new THREE.Vector3().crossVectors(du, dv).normalize();
+  if (n.dot(new THREE.Vector3(p.x, p.y, 0)) < 0) n.negate();
+  const x = du.clone().negate(); // forward
+  const zA = new THREE.Vector3().crossVectors(x, n).normalize();
+  x.crossVectors(n, zA).normalize();
+  const m = new THREE.Matrix4().makeBasis(x, n, zA);
+  m.setPosition(p.addScaledVector(n, lift));
   g.applyMatrix4(m);
   return g;
 }
 
+// ───────────────────────────────────────────────────────── wing helpers
+/** Spanwise stations for |x| in [xa, xb] (denser toward the elliptical tip). */
+function wingStations(xa: number, xb: number, side: 1 | -1, tcScale = 1): LoftStation[] {
+  const xs = new Set<number>([xa, xb]);
+  for (let x = 0; x < WING.tipStart; x += 0.25) if (x > xa && x < xb) xs.add(x);
+  for (let k = 0; k <= 16; k++) {
+    const x = WING.tipStart + (WING.halfSpan - WING.tipStart) * Math.sin((k / 16) * (Math.PI / 2));
+    if (x > xa && x < xb) xs.add(x);
+  }
+  return [...xs]
+    .sort((a, b) => a - b)
+    .map((x) => {
+      const st = wingStation(x);
+      const tc = (0.14 - 0.03 * (x / WING.halfSpan)) * tcScale;
+      return { s: side * x, t: wingY(x), le: st.le, chord: st.chord, tc };
+    });
+}
+
+/** Point on the wing upper surface at |x|, chord fraction xc. */
+function wingUpper(side: 1 | -1, x: number, xc: number, out: THREE.Vector3, lift = 0) {
+  const st = wingStation(x);
+  const tc = 0.14 - 0.03 * (x / WING.halfSpan);
+  const [up] = airfoilAt(xc, tc);
+  return out.set(side * x, wingY(x) + up * st.chord + lift, st.le - xc * st.chord);
+}
+
+/** Thin conformal panel on a wing upper surface, returned as a closed slab. */
+function solarPanel(side: 1 | -1, xa: number, xb: number, ca: number, cb: number) {
+  const fn: SurfaceFn =
+    side > 0
+      ? (u, v, o) => wingUpper(1, u, v, o)
+      : (u, v, o) => wingUpper(-1, v, u, o); // parameter order swapped so the normal still points up
+  return side > 0 ? surfaceSlab(fn, xa, xb, ca, cb, 10, 8, 0.0012, 0.0016) : surfaceSlab(fn, ca, cb, xa, xb, 8, 10, 0.0012, 0.0016);
+}
+
+function navLight(b: Builder, key: MatKey, pos: V3, color: string) {
+  b.add(key, sphere(0.008, pos, 14, 10));
+  const glow = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: glowTexture(), color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.6 }),
+  );
+  glow.position.set(pos[0], pos[1], pos[2]);
+  glow.scale.setScalar(0.12);
+  glow.userData.glow = true;
+  glow.raycast = () => {};
+  b.extras.push(glow);
+}
+
+let _solarTex: THREE.Texture | null = null;
+const solarMat = () => {
+  _solarTex ??= solarTexture();
+  return _solarTex;
+};
+
 const BUILDERS: Record<string, BuildFn> = {};
 
-// Upper shell
-BUILDERS['upper-shell'] = (b) => {
-  b.add('shell', surfaceSlab(bodySurface, 0, 1, 0, PI, 84, 64, BODY.shellThickness));
-  // panel seams (recessed dark outlines)
-  bodyPatch(b, 'seam', 0.244, 0.416, 0.35 * PI, 0.65 * PI, 0.0006, 0.0003);
-  bodyPatch(b, 'seam', 0.594, 0.736, 0.36 * PI, 0.64 * PI, 0.0006, 0.0003);
-  // status light strip
-  bodyPatch(b, 'ledBlue', 0.12, 0.205, 0.485 * PI, 0.515 * PI, 0.0008, 0.0006, 8, 2);
-  // shoulder character lines
-  for (const s of [1, -1]) {
-    const v = s > 0 ? 0.3 * PI : 0.7 * PI;
-    bodyPatch(b, 'seam', 0.2, 0.8, v - 0.004, v + 0.004, 0.0005, 0.00025, 40, 1);
-  }
-  // logo decals on both flanks
+// ───────────────────────────────────────────────────────── airframe
+BUILDERS['fuselage'] = (b) => {
+  b.add('shell', surfaceSlab(fuselageSurface, 0, 1, 0, Math.PI * 2, 96, 64, FUSELAGE.shellThickness));
+  // hatch seams (hatches themselves are separate components)
+  fusePatch(b, 'seam', 0.475, 0.725, 0.355 * Math.PI, 0.645 * Math.PI, 0.0005, 0.00025);
+  fusePatch(b, 'seam', 0.175, 0.445, 1.355 * Math.PI, 1.645 * Math.PI, 0.0005, 0.00025);
+  // nose joint ring
+  fusePatch(b, 'seam', 0.832, 0.836, 0, Math.PI * 2, 0.0004, 0.0002, 2, 48);
+  // logo decals
   for (const side of [1, -1]) {
-    const tex = logoTexture();
     const mat = new THREE.MeshStandardMaterial({
-      map: tex,
+      map: logoTexture(),
       transparent: true,
       depthWrite: false,
       roughness: 0.5,
-      metalness: 0.2,
       polygonOffset: true,
       polygonOffsetFactor: -2,
     });
-    const g = new THREE.PlaneGeometry(0.095, 0.022);
-    // plane: X = text direction, Y = up; place on surface frame
-    g.rotateX(-PI / 2); // now normal +Y, text along +X, up along -Z
-    if (side > 0) g.rotateY(PI); // port side text reads rear-ward
-    onSurface(g, 0.3, side > 0 ? 0.2 * PI : 0.8 * PI, 0.0012, true);
+    const g = new THREE.PlaneGeometry(0.16, 0.035);
+    g.rotateX(-Math.PI / 2); // text along +X, normal +Y
+    if (side > 0) g.rotateY(Math.PI);
+    onFuselage(g, 0.36, side > 0 ? 0.08 : Math.PI - 0.08, 0.0008);
     b.addCustom(g, mat);
   }
 };
@@ -225,18 +305,12 @@ function logoTexture() {
   if (_logo) return _logo;
   const c = document.createElement('canvas');
   c.width = 1024;
-  c.height = 240;
+  c.height = 224;
   const ctx = c.getContext('2d')!;
-  ctx.clearRect(0, 0, c.width, c.height);
-  ctx.fillStyle = 'rgba(225,232,240,0.9)';
-  ctx.font = '300 150px Inter, sans-serif';
+  ctx.fillStyle = 'rgba(40,46,54,0.88)';
+  ctx.font = '400 132px Inter, sans-serif';
   ctx.textBaseline = 'middle';
-  ctx.fillText('K1000', 20, 125);
-  ctx.fillStyle = 'rgba(111,183,255,0.9)';
-  ctx.fillRect(560, 112, 420, 6);
-  ctx.font = '500 40px "JetBrains Mono", monospace';
-  ctx.fillStyle = 'rgba(170,185,200,0.85)';
-  ctx.fillText('HEAVY-LIFT · VIS', 570, 170);
+  ctx.fillText('K1000ULE', 16, 112);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
@@ -244,171 +318,209 @@ function logoTexture() {
   return t;
 }
 
-// Lower chassis
-BUILDERS['lower-chassis'] = (b) => {
-  b.add('shell', surfaceSlab(bodySurface, 0, 1, PI, 2 * PI, 84, 56, BODY.shellThickness));
-  // belt line trim (parting line between shells)
-  bodyPatch(b, 'anodized', 0.03, 0.97, -0.04, 0.04, 0.003, 0.0013, 64, 3);
-  bodyPatch(b, 'anodized', 0.03, 0.97, PI - 0.04, PI + 0.04, 0.003, 0.0013, 64, 3);
-  // belly drain grille aft
-  bodyPatch(b, 'blackMatte', 0.1, 0.18, 1.42 * PI, 1.58 * PI, 0.0008, 0.0004, 6, 6);
-  for (let k = 0; k < 5; k++) {
-    const u = 0.11 + k * 0.016;
-    const g = box(0.004, 0.0016, 0.05);
-    onSurface(g, u, 1.5 * PI, 0.0012, true);
-    b.add('anodized', g);
+BUILDERS['nose-cone'] = (b) => {
+  b.add(
+    'shell',
+    latheZ(
+      [
+        [0, 0.836],
+        [0.0655, 0.836],
+        [0.064, 0.865],
+        [0.059, 0.893],
+        [0.051, 0.918],
+        [0.045, 0.934],
+        [0, 0.934],
+      ],
+      48,
+    ),
+  );
+  // cooling slots
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + 0.3;
+    const g = box(0.003, 0.0016, 0.022);
+    g.translate(0, 0.0, 0);
+    xf(g, [Math.cos(a) * 0.0612, Math.sin(a) * 0.0612, 0.872], [0, 0, a - Math.PI / 2]);
+    b.add('seam', g);
   }
 };
 
-// Center frame
-BUILDERS['center-frame'] = (b) => {
-  const s = new THREE.Shape();
-  const pts: THREE.Vector2[] = [];
-  const mids = [0.095, 0.205, 0.095, 0.205]; // half-extents toward +x, +z, -x, -z in shape space
-  for (let k = 0; k < 4; k++) {
-    const th = PI / 4 + (k * PI) / 2;
-    const d = new THREE.Vector2(Math.cos(th), Math.sin(th));
-    const n = new THREE.Vector2(-d.y, d.x);
-    const base = 0.13;
-    const tip = 0.228;
-    pts.push(d.clone().multiplyScalar(base).addScaledVector(n, -0.05));
-    pts.push(d.clone().multiplyScalar(tip).addScaledVector(n, -0.03));
-    pts.push(d.clone().multiplyScalar(tip + 0.008).addScaledVector(n, 0));
-    pts.push(d.clone().multiplyScalar(tip).addScaledVector(n, 0.03));
-    pts.push(d.clone().multiplyScalar(base).addScaledVector(n, 0.05));
-    const th2 = th + PI / 4;
-    const m = mids[(k + 1) % 4];
-    pts.push(new THREE.Vector2(Math.cos(th2) * m, Math.sin(th2) * m));
-  }
-  s.setFromPoints(pts);
-  // lightening pockets (shape y == -world z)
-  s.holes.push(circlePath(0, -0.155, 0.024));
-  s.holes.push(circlePath(0, 0.16, 0.018));
-  s.holes.push(circlePath(0.045, 0.14, 0.012));
-  s.holes.push(circlePath(-0.045, 0.14, 0.012));
-  s.holes.push(circlePath(0.058, -0.075, 0.016));
-  s.holes.push(circlePath(-0.058, -0.075, 0.016));
-  s.holes.push(circlePath(0.058, 0.07, 0.014));
-  s.holes.push(circlePath(-0.058, 0.07, 0.014));
-  for (let k = 0; k < 4; k++) {
-    const th = PI / 4 + (k * PI) / 2;
-    s.holes.push(slotPath(Math.cos(th) * 0.15, Math.sin(th) * 0.15, Math.cos(th) * 0.19, Math.sin(th) * 0.19, 0.008));
-  }
-  const g = plate(s, 0.004, -0.006, 0.0006);
-  scaleUV(g, 40, 40);
-  b.add('carbon', g);
-  // standoffs
-  for (const [x, z] of [
-    [0.07, 0.1],
-    [-0.07, 0.1],
-    [0.07, -0.1],
-    [-0.07, -0.1],
-  ]) {
-    b.add('aluminum', cyl(0.0032, 0.0032, 0.012, 12, [x, 0.004, z]));
-  }
-  // frame bolts
-  for (let i = 1; i <= 4; i++) {
-    b.bolt(at(i, 0.205, -0.002, 0.032), [0, 1, 0]);
-    b.bolt(at(i, 0.205, -0.002, -0.032), [0, 1, 0]);
-  }
-};
-
-// Arms
-for (const a of ARM_LAYOUT) {
-  BUILDERS[`arm-${pad(a.index)}`] = (b) => {
-    const i = a.index;
-    const d = dirOf(i);
-    const yaw = armYaw(i);
-    const r0 = ARM.rootRadius;
-    const r1 = ARM.tipRadius + 0.035;
-    const len = r1 - r0;
-    const t = cyl(ARM.tubeRadius, ARM.tubeRadius, len, 32, undefined, undefined, true);
-    scaleUV(t, 5, 20);
-    alignY(t, d, v3(at(i, (r0 + r1) / 2, ARM.y)));
-    b.add('carbon', t);
-    // inner liner so the open tube reads solid
-    const liner = cyl(ARM.tubeRadius * 0.86, ARM.tubeRadius * 0.86, len, 24, undefined, undefined, true);
-    alignY(liner, d, v3(at(i, (r0 + r1) / 2, ARM.y)));
-    b.add('blackMatte', liner);
-    // root clamp
-    b.add('anodized', rbox(0.03, 0.05, 0.05, 0.006, at(i, r0 + 0.012, ARM.y + 0.002), [0, yaw, 0]));
-    // folding hinge block
-    const hr = ARM.hingeRadius;
-    b.add('anodized', rbox(0.04, 0.05, 0.058, 0.008, at(i, hr - 0.022, ARM.y + 0.001), [0, yaw, 0]));
-    b.add('anodized', rbox(0.036, 0.048, 0.054, 0.008, at(i, hr + 0.02, ARM.y + 0.001), [0, yaw, 0]));
-    b.add('seam', box(0.004, 0.046, 0.06, at(i, hr, ARM.y + 0.001), [0, yaw, 0]));
-    // hinge pin + lock lever
-    const pin = cyl(0.0055, 0.0055, 0.066, 20);
-    alignY(pin, perpOf(i), v3(at(i, hr + 0.003, ARM.y + 0.027)));
-    b.add('aluminum', pin);
-    b.add('accent', rbox(0.032, 0.006, 0.012, 0.002, at(i, hr + 0.01, ARM.y + 0.03), [0, yaw, 0]));
-    b.bolt(at(i, hr - 0.03, ARM.y + 0.026, 0.017), [0, 1, 0]);
-    b.bolt(at(i, hr - 0.03, ARM.y + 0.026, -0.017), [0, 1, 0]);
-    b.bolt(at(i, hr + 0.03, ARM.y + 0.025, 0.017), [0, 1, 0]);
-    b.bolt(at(i, hr + 0.03, ARM.y + 0.025, -0.017), [0, 1, 0]);
-    // motor mount + clamp
-    const tip = ARM.tipRadius;
-    b.add('anodized', rbox(0.108, 0.006, 0.108, 0.012, at(i, tip, MOTOR.baseY - 0.003), [0, yaw + PI / 4, 0]));
-    b.add('anodized', rbox(0.056, 0.05, 0.05, 0.007, at(i, tip, ARM.y), [0, yaw, 0]));
-    for (let k = 0; k < 4; k++) {
-      const ang = yaw + PI / 4 + (k * PI) / 2;
-      const rr = 0.047;
-      const base = at(i, tip, MOTOR.baseY);
-      b.bolt([base[0] + Math.cos(ang) * rr, base[1], base[2] - Math.sin(ang) * rr], [0, 1, 0]);
+for (const side of [1, -1] as const) {
+  BUILDERS[side > 0 ? 'wing-port' : 'wing-starboard'] = (b) => {
+    const A = WING.aileron;
+    b.add('shell', wingLoft(wingStations(0, A.inner, side), 0, 1));
+    b.add('shell', wingLoft(wingStations(A.inner, A.outer, side), 0, A.hinge));
+    b.add('shell', wingLoft(wingStations(A.outer, WING.halfSpan, side), 0, 1));
+    // root rib joint line
+    const j = wingStation(0.004);
+    b.add('seam', box(0.002, 0.05, j.chord * 0.96, [side * 0.004, wingY(0) + 0.008, (j.le + j.te) / 2]));
+    // wingtip position light
+    const tip = wingStation(WING.halfSpan - 0.04);
+    navLight(b, side > 0 ? 'ledRed' : 'ledGreen', [side * (WING.halfSpan - 0.035), wingY(WING.halfSpan), (tip.le + tip.te) / 2 + 0.01], side > 0 ? '#ff3b2e' : '#3dff7e');
+  };
+  BUILDERS[side > 0 ? 'aileron-port' : 'aileron-starboard'] = (b) => {
+    const A = WING.aileron;
+    b.add('shell', wingLoft(wingStations(A.inner + 0.004, A.outer - 0.004, side), A.hinge + 0.006, 1));
+    // hinge line
+    const mid = (A.inner + A.outer) / 2;
+    void mid;
+  };
+  BUILDERS[side > 0 ? 'solar-port' : 'solar-starboard'] = (b) => {
+    for (let i = 0; i < 8; i++) {
+      const xa = 0.06 + i * 0.285;
+      const xb = xa + 0.27;
+      const ca = i >= 6 ? 0.16 : 0.05;
+      const g = solarPanel(side, xa, xb, ca, 0.9);
+      b.addCustom(g, new THREE.MeshPhysicalMaterial({ map: solarMat(), roughness: 0.16, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.05 }));
     }
-    // end cap + nav light
-    const cap = cyl(ARM.tubeRadius + 0.0015, ARM.tubeRadius + 0.0015, 0.012, 24);
-    alignY(cap, d, v3(at(i, r1 + 0.005, ARM.y)));
-    b.add('blackMatte', cap);
-    const ledKey: MatKey = i === 1 ? 'ledGreen' : i === 3 ? 'ledRed' : 'ledWhite';
-    const ledPos = at(i, r1 + 0.008, ARM.y - 0.017);
-    b.add(ledKey, sphere(0.0075, ledPos, 16, 10));
-    b.add('blackMatte', cyl(0.011, 0.011, 0.006, 20, [ledPos[0], ledPos[1] + 0.005, ledPos[2]]));
-    const glowColor = i === 1 ? '#3dff7e' : i === 3 ? '#ff3b2e' : '#ffffff';
-    const glow = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: glowTexture(),
-        color: glowColor,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.6,
-      }),
+  };
+}
+
+BUILDERS['wing-spar'] = (b) => {
+  const zs = 0.172;
+  for (const side of [1, -1] as const) {
+    const p0 = new THREE.Vector3(0, wingY(0) + 0.011, zs);
+    const p1 = new THREE.Vector3(side * 2.25, wingY(2.25) + 0.008, zs - 0.01);
+    const len = p0.distanceTo(p1);
+    const g = cyl(0.0065, 0.012, len, 20);
+    scaleUV(g, 3, 60);
+    alignY(g, p1.clone().sub(p0).normalize(), p0.clone().lerp(p1, 0.5));
+    b.add('carbon', g);
+    for (let k = 1; k <= 6; k++) {
+      const x = k * 0.35;
+      const st = wingStation(x);
+      const tc = (0.14 - 0.03 * (x / WING.halfSpan)) * 0.86;
+      const stations: LoftStation[] = [
+        { s: side * (x - 0.003), t: wingY(x) + 0.001, le: st.le - 0.01, chord: st.chord - 0.02, tc },
+        { s: side * (x + 0.003), t: wingY(x) + 0.001, le: st.le - 0.01, chord: st.chord - 0.02, tc },
+      ];
+      b.add('plastic', wingLoft(stations, 0.02, 0.95, 16));
+    }
+  }
+  b.add('aluminum', rbox(0.12, 0.022, 0.04, 0.004, [0, wingY(0) + 0.011, zs]));
+};
+
+BUILDERS['tail-boom'] = (b) => {
+  const p0 = new THREE.Vector3(0, 0.0, -0.58);
+  const p1 = new THREE.Vector3(0, 0.012, FUSELAGE.tailEndZ + 0.005);
+  const L = p0.distanceTo(p1);
+  const g = lathe(
+    [
+      [0, 0],
+      [0.026, 0],
+      [0.017, L],
+      [0.011, L + 0.008],
+      [0, L + 0.011],
+    ],
+    32,
+  );
+  alignY(g, p1.clone().sub(p0).normalize(), p0);
+  b.add('shell', g);
+};
+
+const finStations = (): LoftStation[] => [
+  { s: 0.0, t: 0, le: TAIL.finRootLE, chord: TAIL.finRootLE - TAIL.finRootTE, tc: 0.1 },
+  { s: TAIL.finTipY, t: 0, le: TAIL.finTipLE, chord: TAIL.finTipLE - TAIL.finTipTE, tc: 0.09 },
+];
+
+BUILDERS['vertical-fin'] = (b) => {
+  b.add('shell', wingLoft(finStations(), 0, 0.7, 22, 0, 'y'));
+};
+BUILDERS['rudder'] = (b) => {
+  b.add('shell', wingLoft(finStations(), 0.705, 1, 16, 0, 'y'));
+};
+
+function stabStations(side: 1 | -1): LoftStation[] {
+  const c0 = TAIL.stabLE - TAIL.stabTE;
+  const xs = [0, 0.2, 0.36, 0.44, 0.49, 0.515, 0.528, TAIL.stabHalfSpan];
+  return xs.map((x) => {
+    const t = Math.max(0, (x - 0.4) / (TAIL.stabHalfSpan - 0.4));
+    const c = Math.max(0.05, c0 * Math.sqrt(Math.max(0, 1 - t * t)));
+    const te = TAIL.stabTE + 0.3 * (c0 - c);
+    return { s: side * x, t: TAIL.finTipY + 0.006, le: te + c, chord: c, tc: 0.09 };
+  });
+}
+
+BUILDERS['horizontal-stabilizer'] = (b) => {
+  for (const side of [1, -1] as const) b.add('shell', wingLoft(stabStations(side), 0, 0.68, 20, 0));
+};
+BUILDERS['elevator'] = (b) => {
+  for (const side of [1, -1] as const) b.add('shell', wingLoft(stabStations(side), 0.685, 1, 14, 0));
+};
+
+BUILDERS['solar-tail'] = (b) => {
+  const c0 = TAIL.stabLE - TAIL.stabTE;
+  for (const side of [1, -1] as const) {
+    for (const [xa, xb] of [
+      [0.03, 0.235],
+      [0.255, 0.46],
+    ]) {
+      const fn: SurfaceFn = (u, v, o) => {
+        const x = side > 0 ? u : v;
+        const xc = side > 0 ? v : u;
+        const [up] = airfoilAt(xc, 0.09, 0);
+        const t = Math.max(0, (x - 0.4) / (TAIL.stabHalfSpan - 0.4));
+        const c = Math.max(0.05, c0 * Math.sqrt(Math.max(0, 1 - t * t)));
+        const te = TAIL.stabTE + 0.3 * (c0 - c);
+        return o.set(side * x, TAIL.finTipY + 0.006 + up * c, te + c - xc * c);
+      };
+      const g = side > 0 ? surfaceSlab(fn, xa, xb, 0.1, 0.62, 6, 6, 0.001, 0.0014) : surfaceSlab(fn, 0.1, 0.62, xa, xb, 6, 6, 0.001, 0.0014);
+      b.addCustom(g, new THREE.MeshPhysicalMaterial({ map: solarMat(), roughness: 0.16, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.05 }));
+    }
+  }
+};
+
+for (const side of [1, -1] as const) {
+  BUILDERS[side > 0 ? 'boom-port' : 'boom-starboard'] = (b) => {
+    const x = side * BOOM.x;
+    const r = BOOM.radius;
+    b.add(
+      'shell',
+      latheZ(
+        [
+          [0, BOOM.rearZ],
+          [0.009, BOOM.rearZ + 0.006],
+          [0.017, BOOM.rearZ + 0.03],
+          [r, BOOM.rearZ + 0.08],
+          [r, BOOM.frontZ - 0.04],
+          [r - 0.002, BOOM.frontZ - 0.02],
+          [0.016, BOOM.frontZ - 0.007],
+          [0, BOOM.frontZ],
+        ],
+        32,
+        x,
+        BOOM_Y,
+      ),
     );
-    glow.position.set(ledPos[0], ledPos[1] - 0.004, ledPos[2]);
-    glow.scale.setScalar(0.07);
-    glow.userData.glow = true;
-    glow.userData.base = 0.6;
-    glow.raycast = () => {};
-    b.extras.push(glow);
-    // arm decal
-    const dg = new THREE.PlaneGeometry(0.07, 0.0175);
-    dg.rotateX(-PI / 2);
-    dg.rotateY(yaw);
-    const dp = at(i, 0.34, ARM.y + ARM.tubeRadius + 0.0004);
-    dg.translate(dp[0], dp[1], dp[2]);
-    b.addCustom(
-      dg,
-      new THREE.MeshStandardMaterial({
-        map: armDecal(i),
-        transparent: true,
-        depthWrite: false,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        roughness: 0.5,
-      }),
+    // faired pylon up into the wing
+    b.add(
+      'shell',
+      wingLoft(
+        [
+          { s: BOOM_Y, t: x, le: 0.25, chord: 0.31, tc: 0.15 },
+          { s: wingY(BOOM.x) + 0.004, t: x, le: 0.236, chord: 0.27, tc: 0.13 },
+        ],
+        0,
+        1,
+        20,
+        0,
+        'y',
+      ),
     );
-    // serial plate (Easter egg): underside of hinge block on Arm 04
-    if (i === 4) {
-      const sg = new THREE.PlaneGeometry(0.032, 0.008);
-      sg.rotateX(PI / 2);
-      sg.rotateY(yaw);
-      const spos = at(i, hr + 0.02, ARM.y + 0.001 - 0.0242);
-      sg.translate(spos[0], spos[1], spos[2]);
+    // motor mount pads
+    for (const z of [BOOM.rotorFrontZ, BOOM.rotorRearZ]) {
+      b.add('anodized', rbox(0.052, 0.008, 0.052, 0.006, [x, MOTOR_BASE_Y - 0.004, z]));
+      b.add('anodized', cyl(r + 0.0015, r + 0.0015, 0.05, 28, [x, BOOM_Y, z], [Math.PI / 2, 0, 0]));
+    }
+    // serial plate (Easter egg) under the starboard boom
+    if (side < 0) {
+      const g = new THREE.PlaneGeometry(0.034, 0.0085);
+      g.rotateX(Math.PI / 2);
+      g.rotateY(Math.PI / 2);
+      g.translate(x, BOOM_Y - r - 0.0004, 0.05);
       b.addCustom(
-        sg,
+        g,
         new THREE.MeshStandardMaterial({
-          map: serialPlate('SN K1A-04-0731-RW', 'K1000 · MFG 2026-08 · ILLUSTRATIVE'),
+          map: serialPlate('SN K1ULE-B02-0731', 'K1000ULE · ILLUSTRATIVE PLATE'),
           roughness: 0.35,
           metalness: 0.7,
           polygonOffset: true,
@@ -419,10 +531,24 @@ for (const a of ARM_LAYOUT) {
   };
 }
 
-// Motors
+BUILDERS['avionics-hatch'] = (b) => {
+  fusePatch(b, 'panel', 0.48, 0.72, 0.36 * Math.PI, 0.64 * Math.PI, 0.002, 0.0009);
+  for (const z of [0.5, 0.7])
+    for (const v of [0.39, 0.61]) {
+      const g = new THREE.BufferGeometry();
+      void g;
+      const p = fuselageSurface(zToU(z), v * Math.PI, new THREE.Vector3());
+      b.bolt([p.x, p.y + 0.0028, p.z], [p.x * 2, 1, 0], 1.2);
+    }
+};
+
+BUILDERS['fasteners'] = () => {};
+
+// ───────────────────────────────────────────────────────── propulsion
 let _motorGeo: Record<string, THREE.BufferGeometry> | null = null;
 function motorGeometry() {
   if (_motorGeo) return _motorGeo;
+  const s = LIFT.motorRadius / 0.052;
   const stator = lathe(
     [
       [0, 0],
@@ -432,7 +558,7 @@ function motorGeometry() {
       [0.043, 0.0125],
       [0, 0.0125],
     ],
-    48,
+    40,
   );
   const bell = lathe(
     [
@@ -444,166 +570,167 @@ function motorGeometry() {
       [0.03, 0.058],
       [0, 0.058],
     ],
-    64,
+    48,
   );
-  const ring = merge([torus(0.0507, 0.0016, [0, 0.0505, 0], [PI / 2, 0, 0], 8, 64), torus(0.0512, 0.0012, [0, 0.0165, 0], [PI / 2, 0, 0], 8, 64)]);
+  const ring = merge([torus(0.0507, 0.0016, [0, 0.0505, 0], [Math.PI / 2, 0, 0], 8, 48), torus(0.0512, 0.0012, [0, 0.0165, 0], [Math.PI / 2, 0, 0], 8, 48)]);
   const slots: THREE.BufferGeometry[] = [];
   for (let k = 0; k < 14; k++) {
-    const ang = (k / 14) * PI * 2;
-    slots.push(box(0.003, 0.022, 0.011, [Math.cos(ang) * 0.0505, 0.033, Math.sin(ang) * 0.0505], [0, -ang, 0]));
+    const a = (k / 14) * Math.PI * 2;
+    slots.push(box(0.003, 0.022, 0.011, [Math.cos(a) * 0.0505, 0.033, Math.sin(a) * 0.0505], [0, -a, 0]));
   }
-  // stator fins under the base
-  for (let k = 0; k < 18; k++) {
-    const ang = (k / 18) * PI * 2;
-    slots.push(box(0.0018, 0.0075, 0.006, [Math.cos(ang) * 0.0455, 0.0062, Math.sin(ang) * 0.0455], [0, -ang, 0]));
-  }
-  const shaft = merge([cyl(0.0135, 0.0135, 0.012, 32, [0, 0.064, 0]), cyl(0.004, 0.004, 0.006, 12, [0, 0.0725, 0])]);
-  _motorGeo = { stator, bell, ring, slots: merge(slots), shaft };
-  return _motorGeo;
+  const shaft = merge([cyl(0.0135, 0.0135, 0.012, 24, [0, 0.064, 0])]);
+  const out = { stator, bell, ring, slots: merge(slots), shaft };
+  for (const g of Object.values(out)) g.scale(s, s, s);
+  _motorGeo = out;
+  return out;
 }
 
-for (const a of ARM_LAYOUT) {
-  BUILDERS[`motor-${pad(a.index)}`] = (b) => {
-    const i = a.index;
-    const base = at(i, ARM.tipRadius, MOTOR.baseY);
+for (const a of LIFT_LAYOUT) {
+  BUILDERS[`lift-motor-${pad(a.index)}`] = (b) => {
     const g = motorGeometry();
+    const base: V3 = [a.x, MOTOR_BASE_Y, a.z];
     const place = (geo: THREE.BufferGeometry) => xf(geo.clone(), base);
     b.add('anodized', place(g.stator));
     b.add('motorBell', place(g.bell));
     b.add('aluminum', place(g.ring), place(g.shaft));
     b.add('blackMatte', place(g.slots));
     for (let k = 0; k < 4; k++) {
-      const ang = (k / 4) * PI * 2 + PI / 4;
-      b.bolt([base[0] + Math.cos(ang) * 0.022, base[1] + 0.058, base[2] + Math.sin(ang) * 0.022], [0, 1, 0], 0.8);
+      const ang = (k / 4) * Math.PI * 2 + Math.PI / 4;
+      b.bolt([a.x + Math.cos(ang) * 0.021, MOTOR_BASE_Y, a.z + Math.sin(ang) * 0.021], [0, 1, 0], 0.7);
     }
   };
 }
 
-// Propellers (geometry relative to the hub; meshes live under node.spin)
-const _bladeCache: Record<string, THREE.BufferGeometry> = {};
-function bladeGeo(dir: 1 | -1, part: 'main' | 'tip') {
-  const key = `${dir}-${part}`;
-  if (!_bladeCache[key]) {
-    const g = part === 'main' ? propBlade(0.045, PROP.radius, dir, 0, 0.9) : propBlade(0.045, PROP.radius, dir, 0.9, 1, 1.12);
-    if (part === 'main') scaleUV(g, 14, 2);
-    _bladeCache[key] = g;
+const _blade: Record<string, THREE.BufferGeometry> = {};
+const bladeGeo = (dir: 1 | -1, root: number, tip: number) => {
+  const key = `${dir}:${root}:${tip}`;
+  if (!_blade[key]) {
+    const g = propBlade(root, tip, dir);
+    scaleUV(g, 14, 2);
+    _blade[key] = g;
   }
-  return _bladeCache[key];
-}
+  return _blade[key];
+};
 
-for (const a of ARM_LAYOUT) {
-  BUILDERS[`prop-${pad(a.index)}`] = (b, ctx) => {
+for (const a of LIFT_LAYOUT) {
+  BUILDERS[`lift-prop-${pad(a.index)}`] = (b, ctx) => {
     const dir: 1 | -1 = a.spin === 'CW' ? -1 : 1;
-    const c = v3(ctx.data.position);
+    const c = new THREE.Vector3(...ctx.data.position);
+    const s = 0.6;
     const P = (g: THREE.BufferGeometry, yaw: number) => {
       const out = g.clone();
-      out.rotateY(yaw + armYaw(a.index));
+      out.rotateY(yaw + Math.PI / 2); // parked in line with the boom
       out.translate(c.x, c.y, c.z);
       return out;
     };
     const hub = lathe(
       [
-        [0, -0.011],
-        [0.022, -0.011],
-        [0.025, -0.008],
-        [0.025, 0.006],
-        [0.02, 0.011],
-        [0, 0.011],
-      ],
-      40,
-    );
-    const spinner = lathe(
-      [
-        [0, 0.011],
-        [0.015, 0.011],
-        [0.013, 0.017],
-        [0.007, 0.021],
-        [0, 0.0225],
+        [0, -0.011 * s],
+        [0.022 * s, -0.011 * s],
+        [0.025 * s, -0.008 * s],
+        [0.025 * s, 0.006 * s],
+        [0.02 * s, 0.011 * s],
+        [0, 0.011 * s],
       ],
       32,
     );
-    const yokes = merge([rbox(0.03, 0.017, 0.028, 0.004, [0.04, 0.001, 0]), rbox(0.03, 0.017, 0.028, 0.004, [-0.04, 0.001, 0])]);
-    b.addSpin('anodized', P(hub, 0), P(yokes, 0));
+    const spinner = lathe(
+      [
+        [0, 0.011 * s],
+        [0.015 * s, 0.011 * s],
+        [0.013 * s, 0.017 * s],
+        [0.007 * s, 0.021 * s],
+        [0, 0.0225 * s],
+      ],
+      24,
+    );
+    b.addSpin('anodized', P(hub, 0));
     b.addSpin('aluminum', P(spinner, 0));
-    b.addSpin('carbon', P(bladeGeo(dir, 'main'), 0), P(bladeGeo(dir, 'main'), PI));
-    b.addSpin('propWhite', P(bladeGeo(dir, 'tip'), 0), P(bladeGeo(dir, 'tip'), PI));
-    // blade-pin bolts ride on the spinning yokes; kept as regular bolts (static) is fine visually
-    for (const s of [1, -1]) {
-      const v = new THREE.Vector3(0.04 * s, 0.0098, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), armYaw(a.index));
-      b.bolt(c.clone().add(v), [0, 1, 0], 0.9);
-    }
+    const blade = bladeGeo(dir, 0.016, LIFT.propRadius);
+    b.addSpin('carbon', P(blade, 0), P(blade, Math.PI));
     if (a.index === 3) {
-      // modelled leading-edge wear on blade B (Easter egg)
       const t = 0.62;
       const twist = THREE.MathUtils.degToRad(24 - 16 * t) * dir;
-      const r = 0.045 + (PROP.radius - 0.045) * t;
-      const g = new THREE.PlaneGeometry(0.03, 0.011);
-      g.rotateX(-PI / 2);
+      const r = 0.016 + (LIFT.propRadius - 0.016) * t;
+      const g = new THREE.PlaneGeometry(0.018, 0.007);
+      g.rotateX(-Math.PI / 2);
       g.rotateX(-twist);
-      g.translate(r, 0.0128 + r * 0.0, 0.0085 * dir);
-      g.rotateY(PI + armYaw(a.index));
+      g.translate(r, 0.0035 + r * 0.035, 0.0045 * dir);
+      g.rotateY(Math.PI + Math.PI / 2);
       g.translate(c.x, c.y, c.z);
       b.addCustom(
         g,
-        new THREE.MeshStandardMaterial({
-          map: wearMark(),
-          transparent: true,
-          depthWrite: false,
-          polygonOffset: true,
-          polygonOffsetFactor: -4,
-          roughness: 0.8,
-        }),
+        new THREE.MeshStandardMaterial({ map: wearMark(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 0.8 }),
         true,
       );
     }
   };
 }
 
-// ESCs
-for (const a of ARM_LAYOUT) {
-  BUILDERS[`esc-${pad(a.index)}`] = (b) => {
-    const i = a.index;
-    const yaw = armYaw(i);
-    const r = 0.115;
-    b.add('pcbBlack', rbox(0.05, 0.003, 0.034, 0.001, at(i, r, 0.0015), [0, yaw, 0]));
-    b.add('anodized', rbox(0.044, 0.004, 0.03, 0.001, at(i, r, 0.005), [0, yaw, 0]));
-    const fins: THREE.BufferGeometry[] = [];
-    for (let k = 0; k < 7; k++) fins.push(box(0.044, 0.011, 0.0016, at(i, r, 0.0125, -0.0135 + k * 0.0045), [0, yaw, 0]));
-    b.add('anodized', merge(fins));
-    // capacitors
-    for (const s of [-0.009, 0.009]) {
-      const cp = cyl(0.0048, 0.0048, 0.014, 16);
-      alignY(cp, perpOf(i), v3(at(i, r - 0.03, 0.006, s)));
-      b.add('plastic', cp);
-      const cap = cyl(0.0049, 0.0049, 0.002, 16);
-      alignY(cap, perpOf(i), v3(at(i, r - 0.03, 0.006, s + Math.sign(s) * 0.007)));
-      b.add('aluminum', cap);
-    }
-    b.add('copper', box(0.008, 0.0012, 0.026, at(i, r + 0.022, 0.0035), [0, yaw, 0]));
-    b.add('ledBlue', box(0.002, 0.001, 0.002, at(i, r - 0.02, 0.0034, 0.013), [0, yaw, 0]));
+for (const a of LIFT_LAYOUT) {
+  BUILDERS[`esc-${pad(a.index)}`] = (b, ctx) => {
+    const [x, y, z] = ctx.data.position;
+    b.add('pcbBlack', rbox(0.03, 0.003, 0.06, 0.001, [x, y - 0.008, z]));
+    b.add('anodized', rbox(0.026, 0.01, 0.054, 0.002, [x, y - 0.0005, z]));
+    b.add('ledBlue', box(0.002, 0.001, 0.002, [x + 0.01, y + 0.0048, z]));
   };
 }
 
-// Battery
+BUILDERS['cruise-motor'] = (b) => {
+  b.add('motorBell', cyl(0.041, 0.041, 0.022, 40, [0, 0, 0.946], [Math.PI / 2, 0, 0]));
+  b.add('aluminum', torus(0.0412, 0.0012, [0, 0, 0.955], [0, 0, 0], 8, 40));
+  b.add('anodized', cyl(0.043, 0.043, 0.006, 40, [0, 0, 0.937], [Math.PI / 2, 0, 0]));
+};
+
+BUILDERS['cruise-prop'] = (b) => {
+  const z = CRUISE.z;
+  b.addSpin(
+    'blackMatte',
+    latheZ(
+      [
+        [0, 0.957],
+        [0.043, 0.957],
+        [0.041, 0.975],
+        [0.034, 0.996],
+        [0.021, 1.012],
+        [0, 1.02],
+      ],
+      40,
+    ),
+  );
+  const blade = bladeGeo(1, 0.034, CRUISE.propRadius);
+  for (const yaw of [0, Math.PI]) {
+    const g = blade.clone();
+    g.rotateY(yaw);
+    g.rotateX(Math.PI / 2); // disc in XY, thrust along +Z
+    g.translate(0, 0, z);
+    b.addSpin('carbon', g);
+  }
+};
+
+BUILDERS['cruise-esc'] = (b) => {
+  b.add('anodized', rbox(0.05, 0.03, 0.05, 0.004, [0, 0, 0.8]));
+  const fins: THREE.BufferGeometry[] = [];
+  for (let k = 0; k < 6; k++) fins.push(box(0.0014, 0.008, 0.044, [-0.018 + k * 0.0072, 0.019, 0.8]));
+  b.add('anodized', merge(fins));
+};
+
+// ───────────────────────────────────────────────────────── power
 BUILDERS['battery'] = (b) => {
-  const cz = -0.025;
-  const L = 0.2;
-  b.add('plastic', rbox(0.15, 0.047, L, 0.007, [0, -0.0315, cz]));
-  // accent band + end cap
-  b.add('accent', rbox(0.152, 0.049, 0.006, 0.003, [0, -0.0315, cz + L / 2 - 0.018]));
-  b.add('anodized', rbox(0.154, 0.051, 0.014, 0.004, [0, -0.0315, cz - L / 2 + 0.004]));
-  b.add('blackMatte', rbox(0.06, 0.012, 0.01, 0.003, [0, -0.0315, cz - L / 2 - 0.006]));
-  // charge indicator
-  for (let k = 0; k < 4; k++) b.add('ledBlue', box(0.004, 0.003, 0.002, [-0.012 + k * 0.008, -0.016, cz - L / 2 - 0.0035]));
-  // top label
-  const lg = new THREE.PlaneGeometry(0.14, 0.07);
-  lg.rotateX(-PI / 2);
-  lg.translate(0, -0.0079, cz + 0.01);
+  const cz = 0.3;
+  const L = 0.36;
+  b.add('plastic', rbox(0.1, 0.075, L, 0.008, [0, 0.015, cz]));
+  b.add('accent', rbox(0.102, 0.077, 0.006, 0.004, [0, 0.015, cz + L / 2 - 0.02]));
+  b.add('anodized', rbox(0.104, 0.079, 0.014, 0.005, [0, 0.015, cz - L / 2 + 0.005]));
+  for (let k = 0; k < 4; k++) b.add('ledBlue', box(0.004, 0.003, 0.002, [-0.012 + k * 0.008, 0.035, cz - L / 2 - 0.0025]));
+  const lg = new THREE.PlaneGeometry(0.088, 0.044);
+  lg.rotateX(-Math.PI / 2);
+  lg.rotateY(Math.PI / 2);
+  lg.translate(0, 0.0526, cz + 0.02);
   b.add('batteryLabel', lg);
-  // cycle-count plate underneath end cap (Easter egg)
   const sg = new THREE.PlaneGeometry(0.04, 0.01);
-  sg.rotateX(PI / 2);
-  sg.translate(0, -0.0573, cz - L / 2 + 0.004);
+  sg.rotateX(Math.PI / 2);
+  sg.translate(0, 0.015 - 0.0398, cz - L / 2 + 0.005);
   b.addCustom(
     sg,
     new THREE.MeshStandardMaterial({
@@ -616,472 +743,231 @@ BUILDERS['battery'] = (b) => {
   );
 };
 
-BUILDERS['battery-bay'] = (b) => {
-  b.add('plastic', rbox(0.165, 0.003, 0.215, 0.002, [0, -0.0575, -0.025]));
-  for (const s of [1, -1]) {
-    b.add('plastic', rbox(0.004, 0.02, 0.21, 0.0015, [s * 0.081, -0.048, -0.025]));
-    b.add('foam', box(0.003, 0.03, 0.12, [s * 0.0775, -0.03, -0.025]));
-  }
-  b.add('plastic', rbox(0.16, 0.024, 0.004, 0.0015, [0, -0.046, 0.083]));
-  b.add('accent', rbox(0.03, 0.012, 0.008, 0.002, [0, -0.05, -0.132]));
-  for (const [x, z] of [
-    [0.077, 0.075],
-    [-0.077, 0.075],
-    [0.077, -0.125],
-    [-0.077, -0.125],
-  ]) {
-    b.add('aluminum', cyl(0.0028, 0.0028, 0.05, 10, [x, -0.032, z]));
-  }
+BUILDERS['mppt'] = (b) => {
+  b.add('anodized', rbox(0.056, 0.022, 0.07, 0.003, [0, 0.033, -0.12]));
+  const fins: THREE.BufferGeometry[] = [];
+  for (let k = 0; k < 7; k++) fins.push(box(0.0014, 0.007, 0.064, [-0.021 + k * 0.007, 0.0475, -0.12]));
+  b.add('anodized', merge(fins));
+  b.add('ledGreen', box(0.0025, 0.0015, 0.0025, [0.022, 0.0445, -0.09]));
 };
 
 BUILDERS['power-distribution'] = (b) => {
-  b.add('pcb', rbox(0.075, 0.003, 0.075, 0.002, [0, 0.0035, 0]));
-  for (let i = 1; i <= 4; i++) b.add('copper', rbox(0.014, 0.0015, 0.01, 0.0005, at(i, 0.042, 0.0058), [0, armYaw(i), 0]));
-  b.add('blackMatte', rbox(0.016, 0.008, 0.012, 0.001, [0.02, 0.009, -0.025]));
-  b.add('copper', box(0.03, 0.0016, 0.012, [-0.012, 0.0058, -0.03]));
+  b.add('pcb', rbox(0.08, 0.004, 0.08, 0.002, [0, -0.035, 0.07]));
+  b.add('copper', box(0.05, 0.0016, 0.012, [0, -0.0325, 0.04]));
   for (const x of [-0.025, 0.025]) {
-    b.add('plastic', cyl(0.004, 0.004, 0.01, 14, [x, 0.01, 0.026]));
-    b.add('aluminum', cyl(0.0041, 0.0041, 0.0015, 14, [x, 0.0155, 0.026]));
+    b.add('plastic', cyl(0.004, 0.004, 0.01, 14, [x, -0.028, 0.095]));
+    b.add('aluminum', cyl(0.0041, 0.0041, 0.0015, 14, [x, -0.0225, 0.095]));
   }
-};
-
-BUILDERS['power-connector'] = (b) => {
-  b.add('wireYellow', rbox(0.024, 0.013, 0.026, 0.002, [0, -0.02, -0.145]));
-  b.add('wireYellow', rbox(0.02, 0.011, 0.012, 0.002, [0, -0.02, -0.164]));
-  b.add('gold', cyl(0.003, 0.003, 0.012, 10, [-0.005, -0.02, -0.132], [PI / 2, 0, 0]));
-  b.add('gold', cyl(0.003, 0.003, 0.012, 10, [0.005, -0.02, -0.132], [PI / 2, 0, 0]));
+  b.add('blackMatte', rbox(0.016, 0.008, 0.012, 0.001, [0.02, -0.029, 0.06]));
 };
 
 BUILDERS['wiring-harness'] = (b) => {
-  // PDB → ESC power pairs
-  for (let i = 1; i <= 4; i++) {
-    for (const [s, mat] of [
-      [0.0045, 'wireRed'],
-      [-0.0045, 'wireBlack'],
-    ] as const) {
-      b.add(mat, tube([at(i, 0.045, 0.0068, s), at(i, 0.065, 0.011, s), at(i, 0.09, 0.0075, s)], 0.0021, 16, 8));
+  const pair = (pts: V3[], r = 0.0022, off: V3 = [0.004, 0, 0]) => {
+    b.add('wireRed', tube(pts, r, 32, 8));
+    b.add('wireBlack', tube(pts.map((p) => [p[0] + off[0], p[1] + off[1], p[2] + off[2]] as V3), r, 32, 8));
+  };
+  // battery → PDB
+  pair([[-0.01, 0.0, 0.12], [-0.01, -0.02, 0.105], [-0.006, -0.031, 0.09]], 0.0028);
+  // PDB → cruise ESC
+  pair([[0.03, -0.038, 0.11], [0.058, -0.05, 0.3], [0.052, -0.03, 0.56], [0.02, -0.008, 0.776]]);
+  // PDB → wing root → spar → booms → lift ESCs
+  for (const side of [1, -1] as const) {
+    const x = side * BOOM.x;
+    const up: V3[] = [
+      [side * 0.03, -0.03, 0.05],
+      [side * 0.068, 0.0, 0.02],
+      [side * 0.05, 0.075, 0.08],
+      [side * 0.03, wingY(0.03) + 0.006, 0.155],
+      [side * 0.4, wingY(0.4) + 0.006, 0.156],
+      [x - side * 0.02, wingY(BOOM.x) + 0.004, 0.156],
+      [x, BOOM_Y + 0.01, 0.15],
+    ];
+    pair(up, 0.0018, [0, 0, 0.005]);
+    for (const zEnd of [BOOM.rotorFrontZ - 0.1, BOOM.rotorRearZ + 0.1]) {
+      pair([[x, BOOM_Y + 0.008, 0.15], [x, BOOM_Y + 0.006, (0.15 + zEnd) / 2], [x, BOOM_Y + 0.003, zEnd]], 0.0016, [side * 0.004, 0, 0]);
     }
-    // ESC → arm phase leads
-    const ph: MatKey[] = ['wireBlack', 'wireSignal', 'wireYellow'];
-    ph.forEach((m, k) => {
-      const s = (k - 1) * 0.0045;
-      b.add(m, tube([at(i, 0.14, 0.006, s), at(i, 0.155, 0.012, s), at(i, ARM.rootRadius + 0.004, ARM.y, s * 0.6)], 0.0015, 14, 6));
-    });
   }
-  // battery → connector → PDB
-  for (const [s, mat] of [
-    [1, 'wireRed'],
-    [-1, 'wireBlack'],
-  ] as const) {
-    b.add(mat, tube([[s * 0.016, -0.028, -0.125], [s * 0.013, -0.024, -0.129], [s * 0.005, -0.02, -0.132]], 0.003, 10, 8));
-    b.add(
-      mat,
-      tube(
-        [
-          [s * 0.005, -0.02, -0.17],
-          [s * 0.028, -0.014, -0.178],
-          [s * 0.05, -0.004, -0.155],
-          [s * 0.045, 0.008, -0.1],
-          [s * 0.012, 0.0065, -0.04],
-        ],
-        0.0029,
-        40,
-        8,
-      ),
-    );
-  }
-  // signal looms: FC → GPS, FC → datalink, FC → companion
-  b.add('wireSignal', tube([[0, 0.028, -0.036], [0, 0.048, -0.1], [0, 0.058, -0.17], [0, 0.064, -0.198]], 0.0016, 32, 6));
-  b.add('wireSignal', tube([[0.022, 0.026, -0.036], [0.026, 0.026, -0.1], [0.02, 0.024, -0.147]], 0.0014, 24, 6));
-  b.add('wireSignal', tube([[-0.006, 0.026, 0.036], [-0.006, 0.03, 0.07], [-0.006, 0.022, 0.1]], 0.0014, 20, 6));
-  b.add('wireYellow', tube([[0.006, 0.026, 0.036], [0.006, 0.03, 0.07], [0.006, 0.022, 0.1]], 0.0014, 20, 6));
-  // coax to antennas
-  for (const s of [1, -1]) {
-    b.add('wireBlack', tube([[s * 0.02, 0.021, -0.193], [s * 0.06, 0.018, -0.212], [s * 0.098, 0.006, -0.226]], 0.0018, 24, 6));
-  }
-  // wire clips on the frame
-  for (const z of [-0.1, 0.06]) b.add('plastic', rbox(0.012, 0.004, 0.006, 0.001, [0.045, 0.002, z]));
+  // solar → MPPT
+  b.add('wireYellow', tube([[0.012, 0.046, -0.095], [0.012, 0.085, -0.02], [0.012, wingY(0) + 0.004, 0.1], [0.03, wingY(0.03) + 0.01, 0.165]], 0.0016, 24, 6));
+  // signal: FC → SATCOM, datalink, mission computer
+  b.add('wireSignal', tube([[0, 0.042, 0.0], [0, 0.062, -0.08], [0, 0.074, -0.128]], 0.0014, 20, 6));
+  b.add('wireSignal', tube([[0.015, 0.03, -0.01], [0.02, 0.02, -0.15], [0.008, 0.01, -0.28]], 0.0014, 24, 6));
+  b.add('wireSignal', tube([[0, 0.042, 0.065], [0, 0.064, 0.3], [0, 0.046, 0.555]], 0.0014, 24, 6));
+  b.add('wireBlack', tube([[0, -0.016, -0.3], [0, -0.03, -0.29], [0, -0.04, -0.282]], 0.0015, 10, 6));
 };
 
+// ───────────────────────────────────────────────────────── avionics
 BUILDERS['flight-controller'] = (b) => {
   for (const [x, z] of [
-    [0.028, 0.028],
-    [-0.028, 0.028],
-    [0.028, -0.028],
-    [-0.028, -0.028],
-  ]) {
-    b.add('rubber', cyl(0.0052, 0.0052, 0.012, 14, [x, 0.012, z]));
-  }
-  b.add('anodized', rbox(0.07, 0.022, 0.07, 0.004, [0, 0.029, 0]));
+    [0.028, 0.058],
+    [-0.028, 0.058],
+    [0.028, 0.002],
+    [-0.028, 0.002],
+  ])
+    b.add('rubber', cyl(0.005, 0.005, 0.01, 12, [x, 0.012, z]));
+  b.add('anodized', rbox(0.07, 0.022, 0.07, 0.004, [0, 0.028, 0.03]));
   const lid = new THREE.PlaneGeometry(0.062, 0.062);
-  lid.rotateX(-PI / 2);
-  lid.translate(0, 0.0402, 0);
+  lid.rotateX(-Math.PI / 2);
+  lid.translate(0, 0.0392, 0.03);
   b.add('fcLid', lid);
-  // connectors
-  for (let k = 0; k < 4; k++) b.add('plasticLight', rbox(0.01, 0.005, 0.004, 0.0006, [-0.022 + k * 0.0147, 0.024, 0.0365]));
-  for (let k = 0; k < 3; k++) b.add('blackMatte', rbox(0.004, 0.005, 0.01, 0.0006, [0.0365, 0.024, -0.015 + k * 0.015]));
-  b.add('ledGreen', box(0.0025, 0.0015, 0.0025, [0.028, 0.0405, -0.028]));
+  for (let k = 0; k < 4; k++) b.add('plasticLight', rbox(0.01, 0.005, 0.004, 0.0006, [-0.022 + k * 0.0147, 0.023, 0.0665]));
+  b.add('ledGreen', box(0.0025, 0.0015, 0.0025, [0.028, 0.0395, 0.002]));
 };
 
 BUILDERS['companion-computer'] = (b) => {
-  const z = 0.13;
-  b.add('pcb', rbox(0.085, 0.003, 0.06, 0.002, [0, 0.0135, z]));
-  for (const [x, dz] of [
-    [0.037, 0.024],
-    [-0.037, 0.024],
-    [0.037, -0.024],
-    [-0.037, -0.024],
-  ]) {
-    b.add('aluminum', cyl(0.0025, 0.0025, 0.014, 10, [x, 0.005, z + dz]));
-  }
-  b.add('anodized', rbox(0.056, 0.005, 0.044, 0.001, [-0.006, 0.0175, z]));
+  const z = 0.6;
+  b.add('pcb', rbox(0.075, 0.003, 0.1, 0.002, [0, 0.004, z]));
+  b.add('anodized', rbox(0.062, 0.006, 0.08, 0.001, [0, 0.0095, z]));
   const fins: THREE.BufferGeometry[] = [];
-  for (let k = 0; k < 9; k++) fins.push(box(0.0014, 0.012, 0.044, [-0.032 + k * 0.0065, 0.026, z]));
+  for (let k = 0; k < 9; k++) fins.push(box(0.0014, 0.018, 0.08, [-0.028 + k * 0.007, 0.0215, z]));
   b.add('anodized', merge(fins));
-  // blower
-  b.add('plastic', cyl(0.016, 0.016, 0.009, 32, [0.034, 0.02, z + 0.004]));
-  b.add('blackMatte', cyl(0.012, 0.012, 0.0095, 24, [0.034, 0.02, z + 0.004]));
-  const blades: THREE.BufferGeometry[] = [];
-  for (let k = 0; k < 9; k++) {
-    const ang = (k / 9) * PI * 2;
-    blades.push(box(0.0008, 0.008, 0.009, [0.034 + Math.cos(ang) * 0.0075, 0.0205, z + 0.004 + Math.sin(ang) * 0.0075], [0, -ang + 0.5, 0]));
-  }
-  b.add('plastic', merge(blades));
-  b.add('gold', box(0.03, 0.002, 0.004, [0, 0.0158, z - 0.027]));
+  b.add('gold', box(0.03, 0.002, 0.004, [0, 0.0062, z - 0.047]));
+};
+
+BUILDERS['satcom'] = (b) => {
+  const z = -0.14;
+  const top = fuselageProfile(z)[1];
+  const g = sphere(1, [0, 0, 0], 32, 20);
+  g.scale(0.03, 0.022, 0.07);
+  g.translate(0, top - 0.004, z);
+  b.add('radome', g);
+  b.add('anodized', rbox(0.064, 0.004, 0.15, 0.002, [0, top - 0.007, z]));
 };
 
 BUILDERS['datalink'] = (b) => {
-  const z = -0.17;
-  b.add('anodized', rbox(0.07, 0.02, 0.045, 0.004, [0, 0.016, z]));
-  const fins: THREE.BufferGeometry[] = [];
-  for (let k = 0; k < 8; k++) fins.push(box(0.062, 0.005, 0.0016, [0, 0.0285, z - 0.018 + k * 0.0051]));
-  b.add('anodized', merge(fins));
-  for (const s of [1, -1]) {
-    b.add('gold', cyl(0.0035, 0.0035, 0.01, 14, [s * 0.02, 0.018, z - 0.027], [PI / 2, 0, 0]));
-  }
-  b.add('ledBlue', box(0.003, 0.002, 0.001, [0.028, 0.02, z + 0.0228]));
-  b.add('plasticLight', rbox(0.016, 0.006, 0.004, 0.0006, [-0.015, 0.016, z + 0.0235]));
+  b.add('anodized', rbox(0.045, 0.032, 0.08, 0.004, [0, 0.0, -0.32]));
+  b.add('gold', cyl(0.0032, 0.0032, 0.008, 12, [0, -0.018, -0.3], [0, 0, 0]));
+  b.add('ledBlue', box(0.003, 0.002, 0.001, [0.015, 0.008, -0.2797]));
 };
 
-BUILDERS['gps'] = (b) => {
-  const z = -0.2;
-  b.add('anodized', lathe([[0, 0.056], [0.014, 0.056], [0.016, 0.062], [0.012, 0.07], [0, 0.07]], 32, [0, 0, z]));
-  const rod = cyl(0.0052, 0.0052, 0.105, 16, [0, 0.12, z]);
-  scaleUV(rod, 2, 10);
-  b.add('carbon', rod);
-  b.add('anodized', cyl(0.012, 0.014, 0.008, 24, [0, 0.172, z]));
-  b.add('anodized', torus(0.0065, 0.0022, [0, 0.11, z], [PI / 2, 0, 0], 8, 20));
-  b.add(
-    'plasticLight',
-    lathe(
-      [
-        [0, 0.176],
-        [0.037, 0.176],
-        [0.039, 0.18],
-        [0.039, 0.187],
-        [0.033, 0.195],
-        [0.018, 0.2],
-        [0, 0.201],
-      ],
-      48,
-      [0, 0, z],
-    ),
-  );
-  b.add('blackMatte', cyl(0.0395, 0.0395, 0.003, 48, [0, 0.1775, z]));
-  // forward arrow
-  const s = new THREE.Shape();
-  s.moveTo(0, -0.014);
-  s.lineTo(0.008, -0.002);
-  s.lineTo(0.003, -0.002);
-  s.lineTo(0.003, 0.01);
-  s.lineTo(-0.003, 0.01);
-  s.lineTo(-0.003, -0.002);
-  s.lineTo(-0.008, -0.002);
-  s.closePath();
-  b.add('accent', plate(s, 0.0008, 0.2005, 0).translate(0, 0, z));
+BUILDERS['gnss'] = (b) => {
+  const z = -0.42;
+  const top = fuselageProfile(z)[1];
+  b.add('plasticLight', lathe([[0, 0], [0.019, 0], [0.019, 0.006], [0.014, 0.011], [0, 0.012]], 32, [0, top - 0.003, z]));
+  b.add('blackMatte', cyl(0.0195, 0.0195, 0.002, 32, [0, top - 0.002, z]));
 };
 
-for (const s of [1, -1]) {
-  const id = s > 0 ? 'antenna-01' : 'antenna-02';
+for (const [id, z, yTop] of [
+  ['antenna-01', -0.28, -fuselageProfile(-0.28)[2]],
+  ['antenna-02', -0.95, -0.006],
+] as const) {
   BUILDERS[id] = (b) => {
-    const base = new THREE.Vector3(s * 0.104, 0.006, -0.228);
-    b.add('anodized', rbox(0.016, 0.014, 0.018, 0.003, [base.x, base.y, base.z]));
-    b.add('aluminum', sphere(0.0062, [base.x, base.y + 0.009, base.z], 16, 12));
-    const dir = new THREE.Vector3(s * 0.3, 0.92, -0.26).normalize();
-    const start = base.clone().add(new THREE.Vector3(0, 0.012, 0));
-    const sleeve = cyl(0.0058, 0.0062, 0.12, 20);
-    alignY(sleeve, dir, start.clone().addScaledVector(dir, 0.06));
-    b.add('rubber', sleeve);
-    const whip = cyl(0.0032, 0.0045, 0.05, 14);
-    alignY(whip, dir, start.clone().addScaledVector(dir, 0.145));
-    b.add('rubber', whip);
-    b.add('rubber', sphere(0.0034, start.clone().addScaledVector(dir, 0.17).toArray() as V3, 12, 8));
-    const band = cyl(0.0064, 0.0064, 0.004, 20);
-    alignY(band, dir, start.clone().addScaledVector(dir, 0.02));
-    b.add('accent', band);
+    const s = new THREE.Shape();
+    s.moveTo(0.02, 0);
+    s.lineTo(-0.025, 0);
+    s.lineTo(-0.032, -0.06);
+    s.lineTo(-0.02, -0.062);
+    s.closePath();
+    const g = new THREE.ExtrudeGeometry(s, { depth: 0.004, bevelEnabled: true, bevelSize: 0.0012, bevelThickness: 0.0012, bevelSegments: 2 });
+    g.translate(0, 0, -0.002);
+    g.rotateY(Math.PI / 2); // shape X → -Z (sweep aft)
+    g.translate(0, yTop + 0.002, z);
+    b.add('plasticLight', g);
   };
 }
 
-BUILDERS['vision-front'] = (b) => {
-  bodyPatch(b, 'glass', 0.885, 0.972, 0.1 * PI, 0.9 * PI, 0.0018, 0.0007, 14, 30);
-  for (const s of [1, -1]) {
-    const v = s > 0 ? 0.26 * PI : 0.74 * PI;
-    const u = 0.93;
-    const ring = cyl(0.0098, 0.0098, 0.003, 32);
-    onSurface(ring, u, v, 0.0022);
-    b.add('anodized', ring);
-    const lens = cyl(0.0072, 0.0072, 0.0034, 32);
-    onSurface(lens, u, v, 0.0026);
-    b.add('lens', lens);
-  }
-  // centre IR projector
-  const ir = cyl(0.004, 0.004, 0.003, 20);
-  onSurface(ir, 0.935, 0.5 * PI, 0.0022);
-  b.add('lens', ir);
+// ───────────────────────────────────────────────────────── sensors
+BUILDERS['pitot'] = (b) => {
+  const x = 1.25;
+  const st = wingStation(x);
+  const yl = wingY(x) - 0.006;
+  b.add('shell', rbox(0.008, 0.03, 0.03, 0.003, [x, yl - 0.012, st.le - 0.04]));
+  b.add('aluminum', cyl(0.0035, 0.0035, 0.16, 14, [x, yl - 0.026, st.le + 0.03], [Math.PI / 2, 0, 0]));
+  b.add('blackMatte', cyl(0.0037, 0.0037, 0.006, 14, [x, yl - 0.026, st.le + 0.11], [Math.PI / 2, 0, 0]));
 };
 
 BUILDERS['lidar-down'] = (b) => {
-  const c: V3 = [0.03, -0.066, 0.11];
-  b.add('blackMatte', rbox(0.026, 0.013, 0.036, 0.003, c));
-  b.add('lens', cyl(0.0058, 0.0058, 0.002, 24, [c[0], c[1] - 0.0066, c[2] + 0.008]));
-  b.add('glass', cyl(0.0068, 0.0068, 0.002, 24, [c[0], c[1] - 0.0066, c[2] - 0.008]));
-  b.add('anodized', torus(0.0068, 0.0009, [c[0], c[1] - 0.0068, c[2] - 0.008], [PI / 2, 0, 0], 6, 24));
+  const bot = -fuselageProfile(-0.05)[2];
+  b.add('blackMatte', rbox(0.022, 0.012, 0.03, 0.003, [0, bot + 0.002, -0.05]));
+  b.add('lens', cyl(0.005, 0.005, 0.002, 20, [0, bot - 0.0042, -0.043]));
+  b.add('glass', cyl(0.0055, 0.0055, 0.002, 20, [0, bot - 0.0042, -0.057]));
 };
 
-BUILDERS['optical-flow'] = (b) => {
-  const c: V3 = [-0.03, -0.066, 0.11];
-  b.add('blackMatte', rbox(0.026, 0.013, 0.036, 0.003, c));
-  b.add('lens', cyl(0.0075, 0.0075, 0.0022, 28, [c[0], c[1] - 0.0066, c[2]]));
-  b.add('anodized', torus(0.0076, 0.001, [c[0], c[1] - 0.0068, c[2]], [PI / 2, 0, 0], 6, 28));
-  for (const dz of [-0.013, 0.013]) b.add('ledRed', cyl(0.0018, 0.0018, 0.001, 10, [c[0], c[1] - 0.0066, c[2] + dz]));
+BUILDERS['nav-lights'] = (b) => {
+  navLight(b, 'ledWhite', [0, TAIL.finTipY + 0.022, TAIL.stabTE + 0.012], '#ffffff');
+  b.add('shell', rbox(0.012, 0.012, 0.03, 0.004, [0, TAIL.finTipY + 0.014, TAIL.stabTE + 0.02]));
 };
 
-BUILDERS['rear-sensor'] = (b) => {
-  bodyPatch(b, 'glass', 0.012, 0.07, 0.32 * PI, 0.68 * PI, 0.0016, 0.0006, 8, 12);
-  const lens = cyl(0.0055, 0.0055, 0.003, 24);
-  onSurface(lens, 0.035, 0.45 * PI, 0.0021);
-  b.add('lens', lens);
-  const em = cyl(0.003, 0.003, 0.003, 16);
-  onSurface(em, 0.035, 0.56 * PI, 0.0021);
-  b.add('lens', em);
-};
-
+// ───────────────────────────────────────────────────────── camera
 BUILDERS['gimbal'] = (b) => {
-  const z = 0.2;
-  b.add('anodized', rbox(0.09, 0.005, 0.06, 0.004, [0, -0.0555, z]));
-  for (const [x, dz] of [
-    [0.034, 0.021],
-    [-0.034, 0.021],
-    [0.034, -0.021],
-    [-0.034, -0.021],
-  ]) {
-    b.add('rubber', sphere(0.0072, [x, -0.0645, z + dz], 16, 12));
-    b.bolt([x, -0.0528, z + dz], [0, 1, 0], 0.8);
-  }
-  b.add('anodized', rbox(0.082, 0.004, 0.052, 0.004, [0, -0.0735, z]));
-  b.add('aluminum', cyl(0.02, 0.02, 0.007, 36, [0, -0.079, z]));
-  b.add('accent', cyl(0.0205, 0.0205, 0.0018, 36, [0, -0.0815, z]));
-  b.add('motorBell', cyl(0.021, 0.021, 0.016, 40, [0, -0.091, z]));
-  b.add('aluminum', torus(0.0205, 0.0012, [0, -0.0835, z], [PI / 2, 0, 0], 6, 40));
-  // yaw arm → roll motor → roll arm → pitch motor
-  b.add('plasticLight', rbox(0.018, 0.012, 0.052, 0.004, [0, -0.104, z - 0.02]));
-  b.add('plasticLight', rbox(0.018, 0.05, 0.014, 0.004, [0, -0.124, z - 0.042]));
-  b.add('motorBell', cyl(0.019, 0.019, 0.018, 36, [0, -0.15, z - 0.036], [PI / 2, 0, 0]));
-  b.add('aluminum', torus(0.0185, 0.0011, [0, -0.15, z - 0.027], [0, 0, 0], 6, 36));
-  b.add('plasticLight', rbox(0.064, 0.014, 0.014, 0.004, [0.034, -0.15, z - 0.022]));
-  b.add('plasticLight', rbox(0.014, 0.014, 0.06, 0.004, [0.064, -0.15, z + 0.004]));
-  b.add('plasticLight', rbox(0.014, 0.034, 0.016, 0.004, [0.064, -0.164, z + 0.03]));
-  b.add('motorBell', cyl(0.018, 0.018, 0.014, 36, [0.051, -0.175, z + 0.032], [0, 0, PI / 2]));
-  b.add('aluminum', torus(0.0175, 0.001, [0.0445, -0.175, z + 0.032], [0, PI / 2, 0], 6, 36));
-};
-
-BUILDERS['camera'] = (b) => {
-  const c: V3 = [0, -0.175, 0.232];
-  b.add('plasticLight', rbox(0.07, 0.058, 0.066, 0.009, c));
-  b.add('anodized', rbox(0.072, 0.008, 0.06, 0.003, [c[0], c[1] - 0.026, c[2]]));
-  // vents
-  for (let k = 0; k < 5; k++) b.add('blackMatte', box(0.0012, 0.03, 0.004, [-0.0352, c[1], c[2] - 0.02 + k * 0.009]));
-  const front = c[2] + 0.033;
-  const toZ = (g: THREE.BufferGeometry) => xf(g, [c[0], c[1] + 0.002, front], [PI / 2, 0, 0]);
-  b.add(
-    'anodized',
-    toZ(
-      lathe(
-        [
-          [0, 0],
-          [0.026, 0],
-          [0.026, 0.012],
-          [0.0285, 0.014],
-          [0.0285, 0.03],
-          [0.0245, 0.034],
-          [0, 0.034],
-        ],
-        48,
-      ),
-    ),
-  );
-  b.add('blackMatte', toZ(torus(0.0272, 0.0016, [0, 0.022, 0], [PI / 2, 0, 0], 6, 48)));
-  b.add('aluminum', toZ(torus(0.0262, 0.0009, [0, 0.0315, 0], [PI / 2, 0, 0], 6, 48)));
-  b.add(
-    'lens',
-    toZ(
-      lathe(
-        [
-          [0, 0.0372],
-          [0.01, 0.0365],
-          [0.0185, 0.0345],
-          [0.0195, 0.0335],
-          [0, 0.0335],
-        ],
-        48,
-      ),
-    ),
-  );
-  b.add('ledRed', sphere(0.0018, [0.026, c[1] + 0.022, front + 0.0005], 10, 8));
-};
-
-BUILDERS['fpv-camera'] = (b) => {
-  const c: V3 = [0, -0.019, 0.272];
-  b.add('blackMatte', rbox(0.024, 0.019, 0.02, 0.004, c));
-  b.add('anodized', cyl(0.0075, 0.0075, 0.008, 28, [c[0], c[1], c[2] + 0.012], [PI / 2, 0, 0]));
-  b.add('lens', cyl(0.0058, 0.0058, 0.002, 28, [c[0], c[1], c[2] + 0.0165], [PI / 2, 0, 0]));
-};
-
-BUILDERS['payload-rails'] = (b) => {
+  const z = 0.62;
+  const bot = -fuselageProfile(z)[2];
+  b.add('anodized', cyl(0.034, 0.034, 0.01, 40, [0, bot + 0.002, z]));
+  b.add('motorBell', cyl(0.028, 0.03, 0.016, 40, [0, bot - 0.011, z]));
+  b.add('aluminum', torus(0.0285, 0.0012, [0, bot - 0.004, z], [Math.PI / 2, 0, 0], 6, 40));
   for (const s of [1, -1]) {
-    b.add('aluminum', rbox(0.012, 0.012, 0.26, 0.0015, [s * 0.06, -0.08, -0.03]));
-    b.add('blackMatte', box(0.0016, 0.004, 0.25, [s * 0.0665, -0.08, -0.03]));
-    for (const z of [-0.12, 0.06]) {
-      b.add('anodized', cyl(0.0045, 0.0045, 0.02, 12, [s * 0.06, -0.066, z]));
-      b.bolt([s * 0.06, -0.0862, z], [0, -1, 0], 0.9);
-    }
+    b.add('plasticLight', rbox(0.01, 0.05, 0.03, 0.004, [s * 0.05, bot - 0.042, z]));
+    b.add('plasticLight', rbox(0.05, 0.01, 0.03, 0.004, [s * 0.026, bot - 0.02, z]));
+    b.add('motorBell', cyl(0.012, 0.012, 0.008, 24, [s * 0.046, bot - 0.055, z], [0, 0, Math.PI / 2]));
   }
 };
 
-BUILDERS['payload-release'] = (b) => {
-  b.add('plastic', rbox(0.03, 0.02, 0.042, 0.003, [0, -0.078, -0.03]));
-  b.add('aluminum', torus(0.009, 0.0022, [0, -0.096, -0.03], [0, PI / 2, 0], 8, 24));
-  b.add('accent', cyl(0.0025, 0.0025, 0.034, 10, [0, -0.0895, -0.03], [0, 0, PI / 2]));
-  b.add('ledGreen', box(0.003, 0.002, 0.002, [0.01, -0.07, -0.0085]));
+BUILDERS['eo-ir'] = (b) => {
+  const z = 0.62;
+  const cy = -fuselageProfile(z)[2] - 0.055;
+  b.add('plasticLight', sphere(0.041, [0, cy, z], 40, 28));
+  // sensor windows facing forward
+  const win = (r: number, x: number, y: number, key: MatKey) => {
+    const g = cyl(r, r, 0.006, 32);
+    g.rotateX(Math.PI / 2);
+    g.translate(x, cy + y, z + 0.0385);
+    b.add(key, g);
+  };
+  b.add('blackMatte', rbox(0.05, 0.034, 0.012, 0.006, [0, cy - 0.002, z + 0.034]));
+  win(0.012, -0.01, 0, 'lens');
+  win(0.008, 0.014, 0.004, 'glass');
+  b.add('ledRed', sphere(0.0018, [0.016, cy - 0.011, z + 0.041], 10, 8));
 };
 
-BUILDERS['payload-pod'] = (b) => {
-  b.add('shell', rbox(0.13, 0.08, 0.3, 0.032, [0, -0.146, -0.04], undefined, 5));
-  b.add('seam', rbox(0.1315, 0.0815, 0.004, 0.032, [0, -0.146, 0.04], undefined, 5));
-  b.add('glass', rbox(0.06, 0.006, 0.12, 0.003, [0, -0.1865, -0.04]));
-  for (const s of [1, -1]) b.add('anodized', rbox(0.02, 0.022, 0.03, 0.003, [s * 0.06, -0.096, -0.04]));
-};
-
-for (const s of [1, -1]) {
-  const id = s > 0 ? 'gear-left' : 'gear-right';
-  BUILDERS[id] = (b) => {
-    const x = s * GEAR.skidX;
-    for (const zs of [1, -1]) {
-      const z0 = zs * GEAR.mountZ;
-      b.add('anodized', rbox(0.032, 0.016, 0.032, 0.004, [s * GEAR.mountX, GEAR.mountY - 0.004, z0]));
-      b.bolt([s * GEAR.mountX + 0.009, GEAR.mountY - 0.0122, z0 + 0.009], [0, -1, 0]);
-      b.bolt([s * GEAR.mountX - 0.009, GEAR.mountY - 0.0122, z0 - 0.009], [0, -1, 0]);
-      const curve = new THREE.QuadraticBezierCurve3(
-        new THREE.Vector3(s * GEAR.mountX, GEAR.mountY - 0.008, z0),
-        new THREE.Vector3(s * 0.255, GEAR.mountY - 0.03, z0 * 1.03),
-        new THREE.Vector3(x, GEAR.skidY + 0.008, z0 * 1.12),
-      );
-      const strut = tubeCurve(curve, 0.0095, 48, 14);
-      scaleUV(strut, 20, 4);
-      b.add('carbon', strut);
-      b.add('anodized', cyl(0.0135, 0.0135, 0.038, 24, [x, GEAR.skidY + 0.002, z0 * 1.12], [PI / 2, 0, 0]));
-      b.add('anodized', cyl(0.0112, 0.0125, 0.03, 20, [x, GEAR.skidY + 0.018, z0 * 1.12]));
+// ───────────────────────────────────────────────────────── payload
+BUILDERS['payload-bay'] = (b) => {
+  fusePatch(b, 'panel', 0.18, 0.44, 1.36 * Math.PI, 1.64 * Math.PI, 0.002, 0.0009);
+  for (const z of [0.2, 0.42])
+    for (const v of [1.4, 1.6]) {
+      const p = fuselageSurface(zToU(z), v * Math.PI, new THREE.Vector3());
+      b.bolt([p.x, p.y - 0.0028, p.z], [p.x * 2, -1, 0], 1.2);
     }
-    const L = GEAR.skidHalfLength;
-    b.add(
-      'anodized',
-      tube(
-        [
-          [x, GEAR.skidY + 0.035, -L - 0.03],
-          [x, GEAR.skidY + 0.01, -L + 0.012],
-          [x, GEAR.skidY, -L + 0.07],
-          [x, GEAR.skidY, L - 0.07],
-          [x, GEAR.skidY + 0.01, L - 0.012],
-          [x, GEAR.skidY + 0.035, L + 0.03],
-        ],
-        0.0082,
-        64,
-        14,
-      ),
-    );
-    b.add('rubber', sphere(0.0088, [x, GEAR.skidY + 0.035, -L - 0.03], 14, 10));
-    b.add('rubber', sphere(0.0088, [x, GEAR.skidY + 0.035, L + 0.03], 14, 10));
-    for (const zz of [-0.19, 0.19]) b.add('rubber', rbox(0.024, 0.009, 0.07, 0.003, [x, GEAR.skidY - 0.008, zz]));
+};
+
+BUILDERS['payload-module'] = (b) => {
+  b.add('anodized', rbox(0.1, 0.044, 0.22, 0.006, [0, -0.06, 0.31]));
+  b.add('accent', rbox(0.03, 0.006, 0.004, 0.001, [0.03, -0.037, 0.4]));
+  b.add('gold', box(0.04, 0.003, 0.006, [0, -0.037, 0.22]));
+};
+
+// ───────────────────────────────────────────────────────── landing gear
+for (const side of [1, -1] as const) {
+  BUILDERS[side > 0 ? 'gear-port' : 'gear-starboard'] = (b) => {
+    const x = side * BOOM.x;
+    for (const z of [BOOM.rotorFrontZ - 0.12, BOOM.rotorRearZ + 0.12]) {
+      const top = new THREE.Vector3(x, BOOM_Y - BOOM.radius + 0.004, z);
+      const foot = new THREE.Vector3(x + side * 0.03, GEAR.footY + 0.008, z);
+      const g = cyl(0.0055, 0.0075, top.distanceTo(foot), 14);
+      alignY(g, top.clone().sub(foot).normalize(), foot.clone().lerp(top, 0.5));
+      scaleUV(g, 2, 12);
+      b.add('carbon', g);
+      b.add('anodized', rbox(0.022, 0.012, 0.03, 0.004, [x, BOOM_Y - BOOM.radius + 0.002, z]));
+      b.add('rubber', rbox(0.026, 0.01, 0.05, 0.004, [foot.x, GEAR.footY + 0.004, z]));
+    }
   };
 }
 
-BUILDERS['access-panel-a'] = (b) => {
-  bodyPatch(b, 'panel', 0.25, 0.41, 0.36 * PI, 0.64 * PI, 0.0024, 0.0011, 16, 16);
-  for (const [u, v] of [
-    [0.265, 0.385],
-    [0.265, 0.615],
-    [0.395, 0.385],
-    [0.395, 0.615],
-  ]) {
-    const f = surfaceFrame(bodySurface, u, v * PI);
-    b.bolt(f.p.clone().addScaledVector(f.n, 0.0034), f.n, 1.25);
-  }
-  // grip recess
-  const g = rbox(0.03, 0.002, 0.008, 0.0009);
-  onSurface(g, 0.39, 0.5 * PI, 0.0033, false);
-  b.add('seam', g);
-};
-
-BUILDERS['access-panel-b'] = (b) => {
-  bodyPatch(b, 'panel', 0.6, 0.73, 0.37 * PI, 0.63 * PI, 0.0024, 0.0011, 14, 14);
-  for (const [u, v] of [
-    [0.613, 0.395],
-    [0.613, 0.605],
-    [0.717, 0.395],
-    [0.717, 0.605],
-  ]) {
-    const f = surfaceFrame(bodySurface, u, v * PI);
-    b.bolt(f.p.clone().addScaledVector(f.n, 0.0034), f.n, 1.25);
-  }
-  // service port
-  const g = rbox(0.012, 0.002, 0.005, 0.0012);
-  onSurface(g, 0.7, 0.5 * PI, 0.0034);
-  b.add('blackMatte', g);
-};
-
-BUILDERS['cooling-vents'] = (b) => {
-  for (const side of [1, -1]) {
-    const va = side > 0 ? 0.05 : PI - 0.32;
-    const vb = side > 0 ? 0.32 : PI - 0.05;
-    const u0 = 0.43;
-    const u1 = 0.63;
-    bodyPatch(b, 'blackMatte', u0, u1, va, vb, 0.0008, 0.0004, 10, 8);
-    // frame
-    bodyPatch(b, 'anodized', u0 - 0.008, u1 + 0.008, va - 0.025, va, 0.0018, 0.0009, 12, 2);
-    bodyPatch(b, 'anodized', u0 - 0.008, u1 + 0.008, vb, vb + 0.025, 0.0018, 0.0009, 12, 2);
-    bodyPatch(b, 'anodized', u0 - 0.008, u0, va, vb, 0.0018, 0.0009, 2, 8);
-    bodyPatch(b, 'anodized', u1, u1 + 0.008, va, vb, 0.0018, 0.0009, 2, 8);
-    // louvres
-    const slats: THREE.BufferGeometry[] = [];
-    for (let k = 0; k < 9; k++) {
-      const u = u0 + 0.012 + (k * (u1 - u0 - 0.024)) / 8;
-      const vm = (va + vb) / 2;
-      const f0 = surfaceFrame(bodySurface, u, va + 0.01);
-      const f1 = surfaceFrame(bodySurface, u, vb - 0.01);
-      const len = f0.p.distanceTo(f1.p);
-      const g = box(0.0035, 0.0016, len);
-      g.rotateZ(0.5 * side);
-      onSurface(g, u, vm, 0.0016, true);
-      slats.push(g);
+BUILDERS['belly-skid'] = (b) => {
+  for (const s of [1, -1]) {
+    const pts: V3[] = [];
+    for (let k = 0; k <= 8; k++) {
+      const z = -0.2 + (k / 8) * 0.34;
+      const [w, , bot] = fuselageProfile(z);
+      const x = s * 0.035;
+      const y = -bot * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(x) / w, SE)), 1 / SE) - 0.004;
+      pts.push([x, y, z]);
     }
-    b.add('anodized', merge(slats));
+    b.add('rubber', tube(pts, 0.004, 24, 8));
   }
 };
-
-BUILDERS['fasteners'] = () => {};
 
 // ───────────────────────────────────────────────────────── assemble
-export function buildDroneModel(lib: MaterialLibrary): DroneModel {
+export function buildDroneModel(lib: MaterialLibrary, external?: THREE.Object3D | null): DroneModel {
   const root = new THREE.Group();
   root.name = 'K1000';
   const nodes = new Map<string, ComponentNode>();
@@ -1140,9 +1026,9 @@ export function buildDroneModel(lib: MaterialLibrary): DroneModel {
 
   for (const data of COMPONENTS) {
     const node = nodes.get(data.id)!;
-    const fn = BUILDERS[data.id];
+    const fn = external ? undefined : BUILDERS[data.id];
     if (!fn) {
-      console.warn('No builder for component', data.id);
+      if (!external) console.warn('No builder for component', data.id);
       continue;
     }
     const b = new Builder();
@@ -1154,7 +1040,7 @@ export function buildDroneModel(lib: MaterialLibrary): DroneModel {
       if (!m) {
         m = lib[key].clone();
         registerMat(node, m, key);
-        if (data.id === 'camera' && key === 'ledRed') recLamp.push(m as THREE.MeshStandardMaterial);
+        if (data.id === 'eo-ir' && key === 'ledRed') recLamp.push(m as THREE.MeshStandardMaterial);
         matCache.set(key, m);
       }
       return m;
@@ -1223,8 +1109,76 @@ export function buildDroneModel(lib: MaterialLibrary): DroneModel {
     root.add(node.group);
   }
 
+  if (external) triangles = distributeExternal(external, root, nodes, pickables, registerMat);
+
   // fasteners node box: approximate overall
   fastenerNode.localBox.setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3(0.6, 0.2, 0.6));
 
   return { root, nodes, pickables, ledMaterials, glows, recLamp, triangles: Math.round(triangles) };
+}
+
+/** Normalised mesh/node name → component id (exact, then longest-prefix match). */
+const IDS_BY_LENGTH = COMPONENTS.map((c) => c.id).sort((a, b) => b.length - a.length);
+function resolveComponentId(o: THREE.Object3D | null): string | null {
+  for (let cur = o; cur; cur = cur.parent) {
+    const explicit = cur.userData?.componentId as string | undefined;
+    if (explicit && IDS_BY_LENGTH.includes(explicit)) return explicit;
+    const name = cur.name.toLowerCase().replace(/[\s_.]+/g, '-');
+    if (!name) continue;
+    if (IDS_BY_LENGTH.includes(name)) return name;
+    const hit = IDS_BY_LENGTH.find((id) => name.startsWith(id));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * Re-home the meshes of an external (glTF) model into the component groups so every
+ * interaction works unchanged. Meshes whose names don't match a component id fall
+ * back to the fuselage.
+ */
+function distributeExternal(
+  scene: THREE.Object3D,
+  root: THREE.Group,
+  nodes: Map<string, ComponentNode>,
+  pickables: THREE.Object3D[],
+  registerMat: (node: ComponentNode, mat: THREE.Material) => void,
+) {
+  for (const node of nodes.values()) if (!node.group.parent) root.add(node.group);
+  root.updateMatrixWorld(true);
+  scene.updateMatrixWorld(true);
+  const meshes: THREE.Mesh[] = [];
+  scene.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+  });
+  let tris = 0;
+  const unmatched = new Set<string>();
+  for (const mesh of meshes) {
+    const id = resolveComponentId(mesh) ?? 'fuselage';
+    if (!resolveComponentId(mesh)) unmatched.add(mesh.name || '(unnamed)');
+    const node = nodes.get(id)!;
+    const local = node.group.matrixWorld.clone().invert().multiply(mesh.matrixWorld);
+    mesh.removeFromParent();
+    local.decompose(mesh.position, mesh.quaternion, mesh.scale);
+    const mats = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).map((m) => {
+      const c = m.clone();
+      registerMat(node, c);
+      return c;
+    });
+    mesh.material = Array.isArray(mesh.material) ? mats : mats[0];
+    mesh.userData.componentId = id;
+    node.group.add(mesh);
+    node.meshes.push(mesh);
+    pickables.push(mesh);
+    mesh.updateMatrix();
+    mesh.geometry.computeBoundingBox();
+    if (mesh.geometry.boundingBox) node.localBox.union(mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrix));
+    const g = mesh.geometry;
+    tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+  }
+  for (const node of nodes.values()) {
+    if (node.localBox.isEmpty()) node.localBox.setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3(0.02, 0.02, 0.02));
+  }
+  if (unmatched.size) console.info(`[K1000] ${unmatched.size} glTF meshes had no component id and were assigned to the fuselage.`);
+  return Math.round(tris);
 }

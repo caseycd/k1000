@@ -1624,7 +1624,7 @@ input[type='range']::-moz-range-thumb {
 .k-legend {
   position: absolute;
   left: var(--inset);
-  top: 210px;
+  top: 238px;
   display: grid;
   gap: 6px;
   font-size: 8.5px;
@@ -1970,6 +1970,8 @@ input[type='range']::-moz-range-thumb {
   }
   .k-hints-disclaimer {
     font-size: 6.5px;
+    white-space: normal;
+    line-height: 1.6;
   }
   .app.has-selection .k-hints,
   .app.has-dock .k-hints,
@@ -2016,4 +2018,54 @@ input[type='range']::-moz-range-thumb {
     animation-duration: 0.001ms !important;
     transition-duration: 0.2s !important;
   }
+}
+
+.k-pub {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  line-height: 12px;
+  color: var(--ok);
+  border: 1px solid rgba(94, 211, 154, 0.35);
+  vertical-align: 1px;
+}
+.k-note .k-pub {
+  margin: 0 2px 0 0;
+}
+.k-specs tr.pub td {
+  color: var(--text-hi);
+}
+.k-locator .boom {
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.k-locator polygon.body {
+  fill: rgba(150, 180, 210, 0.08);
+}
+
+/* avoid stacking panels */
+.k-settings.open ~ .k-rail {
+  opacity: 0;
+  pointer-events: none;
+}
+.k-tree-wrap.open ~ .k-measure {
+  display: none;
+}
+.k-legend-facts {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  max-width: 230px;
+}
+.k-legend-facts b {
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  font-family: var(--mono);
 }
