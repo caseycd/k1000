@@ -1,0 +1,6 @@
+# Cloudflare Pages project configuration.
+# The static app is built into ./dist by Vite; Pages Functions in ./functions
+# are deployed alongside it as Cloudflare Workers (e.g. /api/status).
+name = "k1000-interactive"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-09-01"

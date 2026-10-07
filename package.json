@@ -1,0 +1,33 @@
+{
+  "name": "k1000-interactive",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "K1000 Interactive — an explorable digital-twin visualization of the K1000 drone.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "pages:dev": "npm run build && wrangler pages dev dist",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name k1000-interactive"
+  },
+  "dependencies": {
+    "camera-controls": "^3.1.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "three": "^0.186.1",
+    "three-mesh-bvh": "^0.9.15",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261006.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.0",
+    "wrangler": "^4.148.0"
+  }
+}
