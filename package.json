@@ -3,14 +3,14 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "K1000 Interactive — an explorable digital-twin visualization of the K1000 drone.",
+  "description": "K1000 Interactive \u2014 an explorable digital-twin visualization of the K1000 drone.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "pages:dev": "npm run build && wrangler pages dev dist",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name k1000-interactive"
+    "deploy": "wrangler deploy",
+    "preview:worker": "npm run build && wrangler dev"
   },
   "dependencies": {
     "camera-controls": "^3.1.2",

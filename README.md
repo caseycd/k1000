@@ -2,7 +2,7 @@
 
 An explorable digital-twin website for the **Kraus Hamdani Aerospace K1000ULE**, a solar-recharged eVTOL UAV that flies for a very long time. The whole site is the aircraft: rotate it, zoom in on tiny parts, explode it, X-ray it, cut sections through it and inspect any of its 55 components.
 
-Built with React, TypeScript, Vite and Three.js, and deployed on Cloudflare Pages with a small Pages Function (Worker) at `/api/status`.
+Built with React, TypeScript, Vite and Three.js, and deployed on Cloudflare Workers (static assets + a tiny `/api/status` Worker).
 
 > **About accuracy.** No official CAD is bundled. The 3D model is built in code. Its proportions were traced from the manufacturer's public product imagery: the solar wing, T-tail, nose tractor prop, and two booms carrying four lift rotors. The absolute scale (a 5 m wingspan is assumed) and the internal layout are illustrative. In the inspector, specs tagged **PUBLISHED** come from the public K1000ULE product page. Every other value is a labelled placeholder. To show the real geometry, drop in a model file (see below).
 
@@ -10,29 +10,30 @@ Built with React, TypeScript, Vite and Three.js, and deployed on Cloudflare Page
 
 ```bash
 npm install
-npm run dev          # Vite dev server (mocks /api/status)
-npm run build        # typecheck + production build → dist/
-npm run pages:dev    # build, then serve dist/ + functions/ in the Cloudflare runtime
+npm run dev              # Vite dev server (mocks /api/status)
+npm run build            # typecheck + production build → dist/
+npm run preview:worker   # build, then run the real Worker + static assets locally (wrangler dev)
 ```
 
-## Deploy to Cloudflare Pages
+## Deploy to Cloudflare
 
-Either connect the repository in the Cloudflare dashboard (Pages → Create → Connect to Git) with:
+The site deploys as a **Cloudflare Worker with Static Assets**. Everything is set in `wrangler.toml`:
+
+- `[build]` runs `npm run build` automatically before each deploy.
+- `[assets]` uploads `dist/` and serves it as a single-page app.
+- The Worker script `worker/index.ts` only handles `/api/*`, e.g. `/api/status`.
+- `public/_headers` gives hashed assets a year-long immutable cache and adds security headers.
+
+**Git-connected Workers project** (Workers & Pages → Create → Import a repository):
 
 | Setting | Value |
 | --- | --- |
-| Build command | `npm run build` |
-| Build output directory | `dist` |
-| Functions directory | `functions` (auto-detected) |
+| Build command | *(leave empty — wrangler runs it)* |
+| Deploy command | `npx wrangler deploy` |
 
-or deploy from the CLI:
+The Worker name in the dashboard must match `name = "k1000"` in `wrangler.toml`. Change one of them if they differ.
 
-```bash
-npx wrangler login
-npm run deploy       # wrangler pages deploy dist --project-name k1000-interactive
-```
-
-`wrangler.toml` sets `pages_build_output_dir`. `public/_headers` gives hashed assets a year-long immutable cache and adds security headers.
+**CLI:** `npx wrangler login` then `npm run deploy`.
 
 ## Using the real K1000ULE model
 
@@ -95,7 +96,7 @@ src/
   shaders/      material patch (highlight / x-ray / ghost / section caps), floor grid
   hooks/        idle fade, keyboard, URL sync
   utils/        actions, URL state, sound
-functions/api/  status.ts — Cloudflare Pages Function
+worker/         index.ts — Cloudflare Worker (/api/status), assets served from dist/
 ```
 
 K1000ULE is a product of Kraus Hamdani Aerospace. This project is an independent interactive visualization.

@@ -1,6 +1,18 @@
-# Cloudflare Pages project configuration.
-# The static app is built into ./dist by Vite; Pages Functions in ./functions
-# are deployed alongside it as Cloudflare Workers (e.g. /api/status).
-name = "k1000-interactive"
-pages_build_output_dir = "./dist"
+# Cloudflare Worker + Static Assets.
+# `wrangler deploy` runs the Vite build (see [build]) and uploads ./dist as static
+# assets. The Worker script only handles /api/* (e.g. /api/status).
+name = "k1000"
+main = "worker/index.ts"
 compatibility_date = "2026-09-01"
+
+[build]
+command = "npm run build"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[observability]
+enabled = true
