@@ -2069,3 +2069,8 @@ input[type='range']::-moz-range-thumb {
   letter-spacing: 0.04em;
   font-family: var(--mono);
 }
+@media (max-width: 720px) {
+  .k-hints span + span::before {
+    display: none;
+  }
+}

@@ -350,9 +350,6 @@ for (const side of [1, -1] as const) {
     b.add('shell', wingLoft(wingStations(0, A.inner, side), 0, 1));
     b.add('shell', wingLoft(wingStations(A.inner, A.outer, side), 0, A.hinge));
     b.add('shell', wingLoft(wingStations(A.outer, WING.halfSpan, side), 0, 1));
-    // root rib joint line
-    const j = wingStation(0.004);
-    b.add('seam', box(0.002, 0.05, j.chord * 0.96, [side * 0.004, wingY(0) + 0.008, (j.le + j.te) / 2]));
     // wingtip position light
     const tip = wingStation(WING.halfSpan - 0.04);
     navLight(b, side > 0 ? 'ledRed' : 'ledGreen', [side * (WING.halfSpan - 0.035), wingY(WING.halfSpan), (tip.le + tip.te) / 2 + 0.01], side > 0 ? '#ff3b2e' : '#3dff7e');

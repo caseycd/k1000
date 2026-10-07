@@ -23,7 +23,7 @@ import { buildDroneModel, type ComponentNode, type DroneModel } from './DroneMod
 import { createMaterialLibrary, globalUniforms } from './materials';
 import { LIGHT_PRESETS, clonePreset, lerpPreset, type LightPreset } from './lighting';
 import { createGridMaterial } from '../shaders/grid';
-import { shadowTexture } from './textures';
+import { planformShadowTexture, SHADOW_PLANE } from './shadow';
 import { AxisGizmo, Hud, type Pt } from './Hud';
 import { sound } from '../utils/sound';
 
@@ -299,11 +299,11 @@ export class DroneEngine {
     this.scene.add(this.grid);
 
     this.shadow = new THREE.Mesh(
-      new THREE.PlaneGeometry(6.2, 3.6),
-      new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.7, toneMapped: false }),
+      new THREE.PlaneGeometry(SHADOW_PLANE.width, SHADOW_PLANE.depth),
+      new THREE.MeshBasicMaterial({ map: planformShadowTexture(), transparent: true, depthWrite: false, opacity: 0.7, toneMapped: false }),
     );
     this.shadow.rotation.x = -Math.PI / 2;
-    this.shadow.position.y = floorY + 0.002;
+    this.shadow.position.set(0, floorY + 0.002, SHADOW_PLANE.centerZ);
     this.shadow.renderOrder = -1;
     this.scene.add(this.shadow);
   }
@@ -464,7 +464,7 @@ export class DroneEngine {
   // ─────────────────────────────────────────────────────────── camera
   private fitDistance() {
     // portrait screens: the long wing needs extra room horizontally
-    const portrait = this.camera.aspect < 1 ? 1 + (1 - this.camera.aspect) * 0.55 : 1;
+    const portrait = this.camera.aspect < 1 ? 1 + (1 - this.camera.aspect) * 1.15 : 1;
     return this.controls.getDistanceToFitSphere(FIT_RADIUS * portrait);
   }
 
@@ -505,7 +505,8 @@ export class DroneEngine {
   }
 
   setCameraView(view: CameraView, smooth = true) {
-    const d = this.fitDistance();
+    // leave room for separated assemblies when the aircraft is exploded
+    const d = this.fitDistance() * (getState().explode > 0.5 ? 1.32 : 1);
     const views: Record<CameraView, [number, number, number]> = {
       reset: [DEFAULT_AZIMUTH, DEFAULT_POLAR, d],
       front: [0, Math.PI / 2, d * 1.02],
