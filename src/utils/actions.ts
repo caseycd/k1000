@@ -127,6 +127,7 @@ export const actions = {
     if (s.cinematic) return set({ cinematic: false });
     if (s.presentation) return set({ presentation: false });
     if (s.freeCam) return set({ freeCam: false });
+    if (s.embedOpen) return set({ embedOpen: false });
     if (s.settingsOpen) return set({ settingsOpen: false });
     if (s.mode === 'measure' && s.measurePending) {
       set({ mode: 'explore' });

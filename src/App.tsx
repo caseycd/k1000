@@ -11,6 +11,7 @@ import { FrameMarks, TechnicalOverlay } from './components/TechnicalOverlay';
 import { Hints, IntroOverlay } from './components/IntroOverlay';
 import { EngineerPanel, ExitChip, Letterbox, Toast } from './components/Misc';
 import { ContextLost, EmbedChrome } from './components/EmbedChrome';
+import { EmbedDialog } from './components/EmbedDialog';
 import { useIdle } from './hooks/useIdle';
 import { useKeyboard } from './hooks/useKeyboard';
 import { useUrlSync } from './hooks/useUrlSync';
@@ -69,6 +70,7 @@ export default function App() {
       <ExitChip />
       <Toast />
       <EmbedChrome />
+      <EmbedDialog />
       <ContextLost />
       <IntroOverlay />
     </div>

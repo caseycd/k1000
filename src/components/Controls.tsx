@@ -8,6 +8,7 @@ import {
   IconInspect,
   IconInternal,
   IconLight,
+  IconEmbed,
   IconLink,
   IconMeasure,
   IconOverlay,
@@ -38,6 +39,8 @@ export function ToolRail() {
   const section = useStore((s) => s.section);
   const overlay = useStore((s) => s.overlay);
   const lighting = useStore((s) => s.lighting);
+  const embed = useStore((s) => s.embed);
+  const embedOpen = useStore((s) => s.embedOpen);
   return (
     <nav className="k-rail fade-on-idle" aria-label="Inspection tools">
       <div className="k-rail-group">
@@ -56,6 +59,14 @@ export function ToolRail() {
         <RailButton active={overlay} onClick={actions.toggleOverlay} icon={<IconOverlay />} label="OVERLAY" hint="O" />
         <RailButton active={lighting !== 'studio'} onClick={actions.cycleLighting} icon={<IconLight />} label={lighting.toUpperCase()} hint="L" />
       </div>
+      {!embed && (
+        <>
+          <div className="k-rail-sep" />
+          <div className="k-rail-group">
+            <RailButton active={embedOpen} onClick={() => useStore.setState({ embedOpen: true })} icon={<IconEmbed />} label="EMBED" />
+          </div>
+        </>
+      )}
     </nav>
   );
 }
@@ -139,6 +150,9 @@ export function SettingsMenu() {
             <Toggle on={snd} onClick={actions.toggleSound} icon={<IconSound size={15} off={!snd} />} label="INTERFACE SOUND" />
             <button className="k-set-action" onClick={() => void actions.copyLink()}>
               <IconLink size={15} /> COPY LINK TO THIS VIEW
+            </button>
+            <button className="k-set-action" onClick={() => useStore.setState({ embedOpen: true, settingsOpen: false })}>
+              <IconEmbed size={15} /> EMBED ON YOUR SITE
             </button>
           </section>
           {engineer && (

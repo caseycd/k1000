@@ -56,6 +56,7 @@ export interface State {
   focusOnSelect: boolean;
 
   settingsOpen: boolean;
+  embedOpen: boolean;
   treeOpen: boolean;
   uiIdle: boolean;
   toast: { text: string; id: number } | null;
@@ -109,6 +110,7 @@ export const useStore = create<State>((set, get) => ({
   focusOnSelect: false,
 
   settingsOpen: false,
+  embedOpen: false,
   treeOpen: false,
   uiIdle: false,
   toast: null,

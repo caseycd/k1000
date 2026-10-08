@@ -165,3 +165,9 @@ export const IconSearch = ({ size, ...p }: P) => (
     <path d="M20 20l-4.5-4.5" />
   </svg>
 );
+
+export const IconEmbed = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}>
+    <path d="M8 7 3 12l5 5M16 7l5 5-5 5M13.5 5l-3 14" />
+  </svg>
+);
