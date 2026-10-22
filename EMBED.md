@@ -43,6 +43,29 @@ Set these as attributes on the placeholder. Each one maps to a URL parameter on 
 
 The full list of component ids is in `src/data/components.ts`. The viewer also sends it in the `ready` event (see below).
 
+## 2D parts atlas
+
+A flat, exploded line drawing of the K1000ULE with every part laid out. Visitors click a part to see its details. It has no WebGL, loads fast, works on any device, and switches to a portrait layout on phones.
+
+```html
+<div data-k1000="parts"></div>
+<script src="https://YOUR-VIEWER-HOST/embed.js" async></script>
+```
+
+You can also use `<k1000-parts></k1000-parts>`, or an iframe pointing at `https://YOUR-VIEWER-HOST/parts?embed=1`. The full-page version lives at `/parts`.
+
+| Attribute | Values | Effect |
+| --- | --- | --- |
+| `data-height`, `data-aspect`, `data-radius` | as above | Size. The default aspect ratio is `16/10`. |
+| `data-component` | component id | Opens with that part selected. |
+| `data-category` | `airframe`, `propulsion`, `power`, `avionics`, `sensors`, `camera`, `payload`, `landing-gear` | Highlights one system. |
+| `data-theme` | `light` | Dark lines on a light background, for light pages. |
+| `data-accent` | hex without `#`, e.g. `e5322d` | Highlight colour, to match your brand. |
+| `data-ink` | hex without `#` | Line colour. |
+| `data-labels` | `0` | Hides the drawing labels. |
+
+The atlas understands the `select` and `reset` commands below, plus `viewer.category('power')` (or `send('category', id)`), and it sends the same `ready` and `select` events.
+
 ## Controlling the viewer from your page
 
 ```js

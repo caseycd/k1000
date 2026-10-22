@@ -10,6 +10,12 @@ function devApi(): Plugin {
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ system: 'K1000 DIGITAL TWIN', status: 'online', edge: 'DEV', illustrative: true }));
       });
+      // Cloudflare serves parts.html at /parts; mirror that in dev
+      server.middlewares.use((req, _res, next) => {
+        const r = req as unknown as { url?: string };
+        if (r.url === '/parts' || r.url?.startsWith('/parts?')) r.url = r.url.replace('/parts', '/parts.html');
+        next();
+      });
     },
   };
 }
@@ -21,6 +27,7 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
+      input: { main: 'index.html', parts: 'parts.html' },
       output: {
         manualChunks(id) {
           if (id.includes('node_modules/three') || id.includes('camera-controls')) return 'three';

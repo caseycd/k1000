@@ -9,6 +9,7 @@ import {
   IconInternal,
   IconLight,
   IconEmbed,
+  IconLayers,
   IconLink,
   IconMeasure,
   IconOverlay,
@@ -63,6 +64,14 @@ export function ToolRail() {
         <>
           <div className="k-rail-sep" />
           <div className="k-rail-group">
+            <RailButton
+              onClick={() => {
+                const sel = useStore.getState().selected;
+                window.location.href = `/parts${sel ? `?component=${sel}` : ''}`;
+              }}
+              icon={<IconLayers />}
+              label="2D PARTS"
+            />
             <RailButton active={embedOpen} onClick={() => useStore.setState({ embedOpen: true })} icon={<IconEmbed />} label="EMBED" />
           </div>
         </>

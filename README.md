@@ -42,6 +42,8 @@ The Worker name in the dashboard must match `name = "k1000"` in `wrangler.toml`.
 <script src="https://YOUR-VIEWER-HOST/embed.js" async></script>
 ```
 
+Use `<div data-k1000="parts"></div>` instead to embed the **2D parts atlas**: an exploded line drawing where every part can be clicked (full page at `/parts`).
+
 The embedded viewer doesn't take over the host page's scrolling, loads lazily, pauses while off-screen, and can be controlled from the host page (`viewer.select('battery')`, `viewer.explode(1)`, …). See **[EMBED.md](EMBED.md)** for options, the API, events and allowed-domain settings, and `/embed-demo.html` for a live example.
 
 ## Using the real K1000ULE model
@@ -51,6 +53,14 @@ Put a glTF binary at **`public/models/k1000ule.glb`**. If it's there, it replace
 - **Coordinate frame:** +Y up, nose toward +Z, units in metres. Files in other units are rescaled to a 5 m span and re-centred.
 - **Interactive parts:** name each mesh (or its parent node) after a component id from `src/data/components.ts`, e.g. `wing-port`, `lift-motor-03`, `battery`. Alternatively, set `extras.componentId` on the mesh. Matching parts can then be selected, exploded, hidden and inspected on their own. Meshes that don't match a component are grouped under `fuselage`.
 - **CAD files:** convert STEP/IGES to glTF first, e.g. with Blender, CAD Exchanger or FreeCAD.
+
+## 2D parts atlas (`/parts`)
+
+An exploded, isometric line drawing of every part, styled like a technical brochure.
+- Click any part to see its description, specs and connected parts. Hover for a tooltip. Hover a label or system filter to highlight an assembly.
+- Zoom and pan with the mouse wheel, by dragging, or by pinching. Light theme and brand colours are set with URL parameters (see EMBED.md).
+- **The drawing is generated from the 3D model, not drawn by hand.** `tools/lineart.ts` builds the same model, spreads the parts out, renders an isometric depth buffer and keeps only the visible edges. The result is `src/parts/lineart.json` (plus a portrait variant for phones). The page itself loads no Three.js.
+- **To change the layout:** edit `tools/layout2d.ts`. Then, with `npm run dev` running, regenerate the drawing with `node tools/run-lineart.mjs` and `node tools/run-lineart.mjs "http://localhost:5173/tools/lineart.html?variant=portrait" src/parts/lineart-portrait.json`. This needs `playwright-core` and a Chromium.
 
 ## Features
 

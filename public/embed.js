@@ -3,8 +3,12 @@
  *
  * Usage on any website:
  *
- *   <div data-k1000></div>
+ *   <div data-k1000></div>                 3D model
+ *   <div data-k1000="parts"></div>         2D parts atlas (exploded line drawing)
  *   <script src="https://YOUR-VIEWER-HOST/embed.js" async></script>
+ *
+ * Parts atlas options: data-component, data-category, data-theme="light",
+ * data-accent="e5322d" (hex, no #), data-ink="…" (line colour), data-labels="0".
  *
  * Optional attributes on the placeholder:
  *   data-height="600"            fixed height in px (default: 16:9 responsive)
@@ -23,7 +27,8 @@
  *   viewer.send('lighting', 'night');         // any command, see EMBED.md
  *   viewer.on('select', (e) => console.log(e.id, e.name));
  *
- * Also available as a custom element: <k1000-viewer component="battery"></k1000-viewer>
+ * Also available as custom elements: <k1000-viewer component="battery"></k1000-viewer>
+ * and <k1000-parts theme="light"></k1000-parts>.
  */
 (function () {
   'use strict';
@@ -45,10 +50,17 @@
     return el.getAttribute('data-' + name) || el.getAttribute(name);
   }
 
+  function isParts(el) {
+    return el.tagName === 'K1000-PARTS' || el.getAttribute('data-k1000') === 'parts';
+  }
+
   function buildSrc(el) {
-    var u = new URL(base);
+    var parts = isParts(el);
+    var u = new URL(parts ? 'parts' : '', base);
     u.searchParams.set('embed', '1');
-    var map = { component: 'component', view: 'view', light: 'light', autorotate: 'autorotate', mode: 'mode', overlay: 'overlay' };
+    var map = parts
+      ? { component: 'component', category: 'category', theme: 'theme', accent: 'accent', ink: 'ink', labels: 'labels' }
+      : { component: 'component', view: 'view', light: 'light', autorotate: 'autorotate', mode: 'mode', overlay: 'overlay' };
     Object.keys(map).forEach(function (k) {
       var v = attr(el, k);
       if (v != null && v !== '') u.searchParams.set(map[k], v);
@@ -63,17 +75,19 @@
     this.ready = false;
     this.queue = [];
 
+    var parts = isParts(el);
     var height = attr(el, 'height');
-    var aspect = attr(el, 'aspect') || '16/9';
+    var aspect = attr(el, 'aspect') || (parts ? '16/10' : '16/9');
+    var bg = parts ? (attr(el, 'theme') === 'light' ? '#f4f6f8' : '#090b0e') : '#06080a';
     var radius = attr(el, 'radius') || '12';
 
     var wrap = document.createElement('div');
     wrap.style.cssText =
-      'position:relative;width:100%;overflow:hidden;background:#06080a;border-radius:' + radius + 'px;' +
+      'position:relative;width:100%;overflow:hidden;background:' + bg + ';border-radius:' + radius + 'px;' +
       (height ? 'height:' + parseInt(height, 10) + 'px;' : 'aspect-ratio:' + aspect + ';');
 
     var iframe = document.createElement('iframe');
-    iframe.title = 'K1000ULE interactive 3D viewer';
+    iframe.title = parts ? 'K1000ULE interactive parts atlas' : 'K1000ULE interactive 3D viewer';
     iframe.loading = 'lazy';
     iframe.allow = 'fullscreen; autoplay';
     iframe.setAttribute('allowfullscreen', '');
@@ -129,6 +143,7 @@
   Viewer.prototype.view = function (v) { return this.send('view', v); };
   Viewer.prototype.explode = function (v) { return this.send('explode', v); };
   Viewer.prototype.reset = function () { return this.send('reset'); };
+  Viewer.prototype.category = function (c) { return this.send('category', c || null); };
   Viewer.prototype.on = function (event, fn) {
     (this.handlers[event] = this.handlers[event] || []).push(fn);
     return this;
@@ -146,16 +161,19 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-k1000]'), mount);
   }
 
-  if (window.customElements && !customElements.get('k1000-viewer')) {
-    customElements.define(
-      'k1000-viewer',
-      class extends HTMLElement {
-        connectedCallback() {
-          if (!this.style.display) this.style.display = 'block';
-          mount(this);
-        }
-      },
-    );
+  if (window.customElements) {
+    ['k1000-viewer', 'k1000-parts'].forEach(function (tag) {
+      if (customElements.get(tag)) return;
+      customElements.define(
+        tag,
+        class extends HTMLElement {
+          connectedCallback() {
+            if (!this.style.display) this.style.display = 'block';
+            mount(this);
+          }
+        },
+      );
+    });
   }
 
   window.K1000 = {
