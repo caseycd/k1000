@@ -67,23 +67,3 @@ export function IntroOverlay() {
     </>
   );
 }
-
-/** Persistent, very subtle instructions along the bottom edge. */
-export function Hints() {
-  const mode = useStore((s) => s.mode);
-  const freeCam = useStore((s) => s.freeCam);
-  const touch = typeof window !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-  let items: string[];
-  if (freeCam) items = ['WASD MOVE', 'Q / E ELEVATE', 'SHIFT FAST', 'ESC EXIT'];
-  else if (mode === 'measure') items = [touch ? 'TAP TWO POINTS' : 'CLICK TWO POINTS', 'ESC CANCEL'];
-  else if (touch) items = ['DRAG TO ROTATE', 'PINCH TO ZOOM', 'TWO FINGERS PAN', 'TAP TO INSPECT'];
-  else items = ['DRAG TO ROTATE', 'RIGHT-DRAG TO PAN', 'SCROLL TO ZOOM', 'CLICK TO INSPECT'];
-  return (
-    <div className="k-hints fade-on-idle">
-      {items.map((t) => (
-        <span key={t}>{t}</span>
-      ))}
-      <div className="k-hints-disclaimer">INTERACTIVE VISUALIZATION · GEOMETRY TRACED FROM PUBLIC IMAGERY · SCALE ILLUSTRATIVE</div>
-    </div>
-  );
-}
