@@ -53,7 +53,7 @@ export function Letterbox() {
       <i className="top" />
       <i className="bottom" />
       <div className="k-cine-caption">
-        <span>K1000</span> CINEMATIC SEQUENCE · ESC TO EXIT
+        <span>K1000ULE</span> CINEMATIC SEQUENCE · ESC TO EXIT
       </div>
     </div>
   );

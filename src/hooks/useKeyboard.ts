@@ -37,7 +37,6 @@ export function useKeyboard() {
         case 't': return actions.toggleView('internal');
         case 'x': return actions.toggleView('xray');
         case 's': return actions.toggleSection();
-        case 'o': return actions.toggleOverlay();
         case 'l': return actions.cycleLighting();
         case 'r': return actions.toggleAutoRotate();
         case 'c': return actions.toggleFreeCam();

@@ -7,7 +7,7 @@ import { COMPONENT_MAP } from '../data/components';
  *   view=exploded,internal|xray explode=0..1
  *   light=studio|technical|night|inspection
  *   section=top|side|front      cut=-1..1
- *   overlay=1  present=1  cam=px,py,pz,tx,ty,tz
+ *   present=1  cam=px,py,pz,tx,ty,tz
  */
 export function readUrlState(search = window.location.search): Partial<State> {
   const q = new URLSearchParams(search);
@@ -29,7 +29,6 @@ export function readUrlState(search = window.location.search): Partial<State> {
   if (section && ['top', 'side', 'front'].includes(section)) out.section = section;
   const cut = q.get('cut');
   if (cut !== null && Number.isFinite(Number(cut))) out.sectionOffset = Math.min(1, Math.max(-1, Number(cut)));
-  if (q.get('overlay') === '1') out.overlay = true;
   if (q.get('present') === '1') out.presentation = true;
   const cam = q.get('cam');
   if (cam) out.camParam = cam;
@@ -62,7 +61,6 @@ export function writeUrlState(s: State) {
     q.set('section', s.section);
     if (Math.abs(s.sectionOffset) > 0.001) q.set('cut', s.sectionOffset.toFixed(2));
   }
-  if (s.overlay) q.set('overlay', '1');
   if (s.presentation) q.set('present', '1');
   if (s.camParam && s.interacted) q.set('cam', s.camParam);
   const str = q.toString().replace(/%2C/g, ',');

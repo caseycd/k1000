@@ -7,7 +7,7 @@ import { ComponentInspector } from './components/ComponentInspector';
 import { ExplodedView } from './components/ExplodedView';
 import { SectionControl } from './components/SectionControl';
 import { MeasurementTool } from './components/MeasurementTool';
-import { FrameMarks, TechnicalOverlay } from './components/TechnicalOverlay';
+import { FrameMarks } from './components/TechnicalOverlay';
 import { IntroOverlay } from './components/IntroOverlay';
 import { EngineerPanel, ExitChip, Letterbox, Toast } from './components/Misc';
 import { ContextLost, EmbedChrome } from './components/EmbedChrome';
@@ -49,7 +49,6 @@ export default function App() {
   return (
     <div className={cls}>
       <DroneViewer />
-      <TechnicalOverlay />
       <div className="k-ui">
         <FrameMarks />
         <StatusPanel />

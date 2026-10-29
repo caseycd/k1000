@@ -196,24 +196,6 @@ kbd {
   fill: var(--text-hi);
   text-anchor: middle;
 }
-.hud-leader {
-  stroke-opacity: 0.45;
-}
-.hud-labname {
-  font-family: var(--sans);
-  font-size: 9.5px;
-  letter-spacing: 0.16em;
-  fill: var(--text-hi);
-}
-.hud-labcode {
-  font-size: 8.5px;
-  fill: var(--dim);
-}
-.hud-dim {
-  font-size: 9.5px;
-  fill: #8fb8e0;
-  letter-spacing: 0.12em;
-}
 
 /* gizmo */
 .k-gizmo-wrap {
@@ -1523,91 +1505,6 @@ input[type='range']::-moz-range-thumb {
   margin-bottom: 2px;
 }
 
-/* ───────────────────────────────────────────────────────────── tech overlay frame */
-.k-techframe {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.8s var(--ease);
-}
-.k-techframe.show {
-  opacity: 1;
-}
-.k-ruler {
-  position: absolute;
-  --tick: rgba(150, 185, 220, 0.22);
-}
-.k-ruler.top,
-.k-ruler.bottom {
-  left: 120px;
-  right: 120px;
-  height: 7px;
-  background: repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 10px),
-    repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 50px);
-  background-size: 100% 4px, 100% 7px;
-  background-repeat: no-repeat;
-}
-.k-ruler.top {
-  top: 6px;
-}
-.k-ruler.bottom {
-  bottom: 6px;
-  transform: scaleY(-1);
-}
-.k-ruler.left,
-.k-ruler.right {
-  top: 120px;
-  bottom: 120px;
-  width: 7px;
-  background: repeating-linear-gradient(0deg, var(--tick) 0 1px, transparent 1px 10px),
-    repeating-linear-gradient(0deg, var(--tick) 0 1px, transparent 1px 50px);
-  background-size: 4px 100%, 7px 100%;
-  background-repeat: no-repeat;
-}
-.k-ruler.left {
-  left: 6px;
-}
-.k-ruler.right {
-  right: 6px;
-  transform: scaleX(-1);
-}
-.k-reticle {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 26px;
-  height: 26px;
-  transform: translate(-50%, -50%);
-  background: linear-gradient(var(--line-strong), var(--line-strong)) center/1px 100% no-repeat,
-    linear-gradient(var(--line-strong), var(--line-strong)) center/100% 1px no-repeat;
-  opacity: 0.5;
-}
-.k-legend {
-  position: absolute;
-  left: var(--inset);
-  top: 238px;
-  display: grid;
-  gap: 6px;
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
-  color: var(--dim);
-}
-.k-legend .sw {
-  display: inline-block;
-  width: 16px;
-  height: 0;
-  border-top: 1px dashed #6f9fcf;
-  vertical-align: middle;
-  margin-right: 8px;
-}
-.k-legend .sw.disc {
-  border-top-color: var(--accent);
-}
-.k-legend .sw.dim {
-  border-top-style: solid;
-  border-top-color: #8fb8e0;
-}
 
 /* ───────────────────────────────────────────────────────────── intro / loader */
 .k-loader {
@@ -1634,11 +1531,6 @@ input[type='range']::-moz-range-thumb {
   letter-spacing: 0.5em;
   padding-left: 0.5em;
   color: var(--text-hi);
-}
-.k-loader-sub {
-  font-size: 8.5px;
-  letter-spacing: 0.34em;
-  color: var(--dim);
 }
 .k-loader-bar {
   width: 140px;
@@ -1786,9 +1678,6 @@ input[type='range']::-moz-range-thumb {
 @media (max-width: 1100px) {
   .k-inspector {
     width: 290px;
-  }
-  .k-legend {
-    display: none;
   }
 }
 
@@ -1997,27 +1886,12 @@ input[type='range']::-moz-range-thumb {
 .k-tree-wrap.open ~ .k-measure {
   display: none;
 }
-.k-legend-facts {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 4px;
-  max-width: 230px;
-}
-.k-legend-facts b {
-  font-weight: 400;
-  color: var(--text);
-  letter-spacing: 0.04em;
-  font-family: var(--mono);
-}
 /* ───────────────────────────────────────────────────────────── embed mode */
 .app.is-embed {
   --inset: 16px;
 }
 .app.is-embed .k-status-grid,
-.app.is-embed .k-frame,
-.app.is-embed .k-legend {
+.app.is-embed .k-frame {
   display: none;
 }
 .app.is-embed .k-brand-mark {

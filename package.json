@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "K1000 Interactive — an explorable digital-twin visualization of the K1000 drone.",
+  "description": "K1000ULE — an explorable 3D visualization of the K1000ULE drone.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

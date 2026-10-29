@@ -36,7 +36,6 @@ export interface State {
   section: SectionAxis | null;
   sectionOffset: number;
   lighting: LightingMode;
-  overlay: boolean;
   autoRotate: boolean;
   freeCam: boolean;
   presentation: boolean;
@@ -92,7 +91,6 @@ export const useStore = create<State>((set, get) => ({
   section: null,
   sectionOffset: 0,
   lighting: 'studio',
-  overlay: false,
   autoRotate: true,
   freeCam: false,
   presentation: false,
