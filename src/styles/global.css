@@ -1432,44 +1432,6 @@ input[type='range']::-moz-range-thumb {
   border: 1px solid var(--accent);
 }
 
-/* ───────────────────────────────────────────────────────────── hints */
-.k-hints {
-  position: absolute;
-  left: 50%;
-  bottom: var(--inset);
-  transform: translateX(-50%);
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 4px 22px;
-  font-size: 8.5px;
-  letter-spacing: 0.26em;
-  color: var(--dim);
-  pointer-events: none !important;
-  white-space: nowrap;
-  max-width: calc(100vw - 2 * 330px);
-}
-.k-hints span {
-  position: relative;
-}
-.k-hints span + span::before {
-  content: '';
-  position: absolute;
-  left: -12px;
-  top: 50%;
-  width: 3px;
-  height: 1px;
-  background: var(--dim2);
-}
-.k-hints-disclaimer {
-  flex-basis: 100%;
-  text-align: center;
-  font-size: 7.5px;
-  letter-spacing: 0.22em;
-  color: var(--dim2);
-  margin-top: 5px;
-}
-
 /* ───────────────────────────────────────────────────────────── measure */
 .k-measure {
   position: absolute;
@@ -1825,9 +1787,6 @@ input[type='range']::-moz-range-thumb {
   .k-inspector {
     width: 290px;
   }
-  .k-hints {
-    max-width: calc(100vw - 2 * 240px);
-  }
   .k-legend {
     display: none;
   }
@@ -1961,23 +1920,6 @@ input[type='range']::-moz-range-thumb {
   .app.has-selection .k-dock {
     display: none;
   }
-  .k-hints {
-    bottom: 128px;
-    max-width: calc(100vw - 32px);
-    gap: 4px 14px;
-    font-size: 7px;
-    letter-spacing: 0.18em;
-  }
-  .k-hints-disclaimer {
-    font-size: 6.5px;
-    white-space: normal;
-    line-height: 1.6;
-  }
-  .app.has-selection .k-hints,
-  .app.has-dock .k-hints,
-  .app.mode-measure .k-hints {
-    opacity: 0;
-  }
   .k-measure {
     top: 64px;
     transform: none;
@@ -2069,19 +2011,12 @@ input[type='range']::-moz-range-thumb {
   letter-spacing: 0.04em;
   font-family: var(--mono);
 }
-@media (max-width: 720px) {
-  .k-hints span + span::before {
-    display: none;
-  }
-}
-
 /* ───────────────────────────────────────────────────────────── embed mode */
 .app.is-embed {
   --inset: 16px;
 }
 .app.is-embed .k-status-grid,
 .app.is-embed .k-frame,
-.app.is-embed .k-hints-disclaimer,
 .app.is-embed .k-legend {
   display: none;
 }

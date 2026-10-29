@@ -8,7 +8,7 @@ import { ExplodedView } from './components/ExplodedView';
 import { SectionControl } from './components/SectionControl';
 import { MeasurementTool } from './components/MeasurementTool';
 import { FrameMarks, TechnicalOverlay } from './components/TechnicalOverlay';
-import { Hints, IntroOverlay } from './components/IntroOverlay';
+import { IntroOverlay } from './components/IntroOverlay';
 import { EngineerPanel, ExitChip, Letterbox, Toast } from './components/Misc';
 import { ContextLost, EmbedChrome } from './components/EmbedChrome';
 import { EmbedDialog } from './components/EmbedDialog';
@@ -64,7 +64,6 @@ export default function App() {
           <ExplodedView />
           <SectionControl />
         </div>
-        <Hints />
       </div>
       <Letterbox />
       <ExitChip />
