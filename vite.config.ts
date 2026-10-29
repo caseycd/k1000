@@ -8,7 +8,7 @@ function devApi(): Plugin {
     configureServer(server) {
       server.middlewares.use('/api/status', (_req, res) => {
         res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ system: 'K1000 DIGITAL TWIN', status: 'online', edge: 'DEV', illustrative: true }));
+        res.end(JSON.stringify({ system: 'K1000ULE', status: 'online', edge: 'DEV', illustrative: true }));
       });
       // Cloudflare serves parts.html at /parts; mirror that in dev
       server.middlewares.use((req, _res, next) => {

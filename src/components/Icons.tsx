@@ -21,14 +21,6 @@ export const IconSettings = ({ size, ...p }: P) => (
   </svg>
 );
 
-export const IconInspect = ({ size, ...p }: P) => (
-  <svg {...base(size)} {...p}>
-    <path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" />
-    <circle cx="12" cy="12" r="3.2" />
-    <path d="M12 6.5v1.6M12 15.9v1.6M6.5 12h1.6M15.9 12h1.6" />
-  </svg>
-);
-
 export const IconMeasure = ({ size, ...p }: P) => (
   <svg {...base(size)} {...p}>
     <path d="M4 17 17 4l3 3L7 20z" />
@@ -65,14 +57,6 @@ export const IconSection = ({ size, ...p }: P) => (
     <path d="M12 3.5 19.5 8v8L12 20.5 4.5 16V8z" />
     <path d="M3 12h18" strokeDasharray="1.6 1.4" />
     <path d="M4.5 12 12 16.4 19.5 12" strokeOpacity="0.55" />
-  </svg>
-);
-
-export const IconOverlay = ({ size, ...p }: P) => (
-  <svg {...base(size)} {...p}>
-    <path d="M3.5 12h17M12 3.5v17" strokeDasharray="1.5 1.5" />
-    <circle cx="12" cy="12" r="6" />
-    <path d="M5 5l2 2M19 5l-2 2M5 19l2-2M19 19l-2-2" />
   </svg>
 );
 

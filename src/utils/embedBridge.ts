@@ -51,14 +51,11 @@ function handle(cmd: string, value: unknown) {
     case 'lighting':
       if (LIGHTS.includes(value as LightingMode)) set({ lighting: value as LightingMode });
       return;
-    case 'overlay':
-      set({ overlay: !!value });
-      return;
     case 'autoRotate':
       set({ autoRotate: !!value });
       return;
     case 'reset':
-      set({ selected: null, explode: 0, view: 'exterior', section: null, mode: 'explore', overlay: false, hidden: {} });
+      set({ selected: null, explode: 0, view: 'exterior', section: null, mode: 'explore', hidden: {} });
       engineRef.current?.setCameraView('reset');
       return;
   }

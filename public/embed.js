@@ -1,5 +1,5 @@
 /*!
- * K1000 Interactive — embed loader
+ * K1000ULE — embed loader
  *
  * Usage on any website:
  *
@@ -60,7 +60,7 @@
     u.searchParams.set('embed', '1');
     var map = parts
       ? { component: 'component', category: 'category', theme: 'theme', accent: 'accent', ink: 'ink', labels: 'labels' }
-      : { component: 'component', view: 'view', light: 'light', autorotate: 'autorotate', mode: 'mode', overlay: 'overlay' };
+      : { component: 'component', view: 'view', light: 'light', autorotate: 'autorotate', mode: 'mode' };
     Object.keys(map).forEach(function (k) {
       var v = attr(el, k);
       if (v != null && v !== '') u.searchParams.set(map[k], v);

@@ -39,10 +39,6 @@ export const actions = {
   setSectionOffset(v: number) {
     set({ sectionOffset: v });
   },
-  toggleOverlay() {
-    set({ overlay: !getState().overlay, interacted: true });
-    sound.toggle();
-  },
   setLighting(l: LightingMode) {
     set({ lighting: l });
     sound.mode();

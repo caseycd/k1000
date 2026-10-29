@@ -13,7 +13,7 @@ function status(request: Request, env: Env) {
   const cf = (request as Request & { cf?: IncomingRequestCfProperties }).cf;
   // All "telemetry" here is illustrative; nothing is read from a real aircraft.
   const body = {
-    system: 'K1000 DIGITAL TWIN',
+    system: 'K1000ULE',
     status: 'online',
     version: env.BUILD_VERSION ?? '1.0.0',
     edge: cf?.colo ?? 'LOCAL',

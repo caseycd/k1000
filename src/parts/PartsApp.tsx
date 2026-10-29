@@ -368,8 +368,8 @@ export function PartsApp({ art }: { art: LineArt }) {
 
       <header className="pa-head">
         <a className="pa-brand" href={EMBED ? '/parts' : undefined} target={EMBED ? '_blank' : undefined} rel="noopener">
-          <span className="pa-logo">K1000</span>
-          <span className="pa-sub">ULE · PARTS ATLAS</span>
+          <span className="pa-logo">K1000ULE</span>
+          <span className="pa-sub">PARTS ATLAS</span>
         </a>
         <nav className="pa-actions">
           <a className="pa-btn" href={`/${selected ? `?component=${selected}&mode=inspection` : ''}`} target={EMBED ? '_blank' : undefined} rel="noopener">
@@ -417,7 +417,7 @@ export function PartsApp({ art }: { art: LineArt }) {
         </div>
       </footer>
 
-      {!compact && !sel && <p className="pa-note">Line art traced from the K1000ULE digital twin · loose parts shown enlarged · click any part</p>}
+      {!compact && !sel && <p className="pa-note">Line art traced from the K1000ULE 3D model · loose parts shown enlarged · click any part</p>}
 
       {sel && <InfoPanel c={sel} onClose={() => select(null)} onPick={select} onStep={step} />}
 

@@ -4,7 +4,7 @@ import { engineRef } from '../engine/engineRef';
 
 /**
  * First-load sequence: dark screen → drone fades in at a three-quarter view →
- * UI appears → "EXPLORE THE K1000" message fades away (or on first interaction).
+ * UI appears → "EXPLORE THE K1000ULE" message fades away (or on first interaction).
  */
 export function IntroOverlay() {
   const ready = useStore((s) => s.ready);
@@ -49,8 +49,7 @@ export function IntroOverlay() {
     <>
       <div className={`k-loader ${phase !== 'dark' ? 'gone' : ''}`} aria-hidden={phase !== 'dark'}>
         <div className="k-loader-inner">
-          <div className="k-loader-title">K1000</div>
-          <div className="k-loader-sub">ULE · INITIALIZING DIGITAL TWIN</div>
+          <div className="k-loader-title">K1000ULE</div>
           <div className="k-loader-bar">
             <i style={{ transform: `scaleX(${Math.max(0.04, progress)})` }} />
           </div>

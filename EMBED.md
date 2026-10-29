@@ -1,4 +1,4 @@
-# Embedding K1000 Interactive
+# Embedding K1000ULE
 
 Put the K1000ULE viewer on any website with one line of HTML. It works with any site builder that allows custom HTML: WordPress, Webflow, Squarespace, Wix, Shopify, plain HTML, React and so on.
 
@@ -38,7 +38,6 @@ Set these as attributes on the placeholder. Each one maps to a URL parameter on 
 | `data-view` | `exploded`, `internal`, `xray` | Starting view. Combine with commas. |
 | `data-light` | `studio`, `technical`, `night`, `inspection` | Lighting preset. |
 | `data-mode` | `inspection`, `measure` | Starting tool. |
-| `data-overlay` | `1` | Shows the technical overlay. |
 | `data-autorotate` | `0` / `1` | Turns the idle rotation off or on. |
 
 The full list of component ids is in `src/data/components.ts`. The viewer also sends it in the `ready` event (see below).
@@ -78,7 +77,6 @@ viewer.send('xray', true);       // x-ray on/off
 viewer.send('internal', true);   // ghost the skin
 viewer.send('section', 'side');  // top | side | front | null
 viewer.send('lighting', 'night');
-viewer.send('overlay', true);
 viewer.send('mode', 'inspect');  // explore | inspect | measure
 viewer.send('autoRotate', false);
 viewer.reset();                  // back to the default state
